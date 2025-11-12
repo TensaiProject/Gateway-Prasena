@@ -1,0 +1,44 @@
+[Unit]
+Description=Weather Station Gateway (All Services)
+Documentation=https://github.com/TensaiProject/Gateway-Prasena
+After=network.target pigpiod.service
+Requires=pigpiod.service
+
+[Service]
+Type=simple
+User=weatherstation1
+Group=weatherstation1
+WorkingDirectory=/home/weatherstation1/sistem
+
+# Environment
+Environment="PATH=/home/weatherstation1/sistem/venv/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+# Run all services in single process (multi-threaded)
+ExecStart=/home/weatherstation1/sistem/venv/bin/python3 /home/weatherstation1/sistem/run.py --service all
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=0
+
+# Resource limits (for Pi Zero 2W - 512MB RAM)
+MemoryLimit=384M
+CPUQuota=200%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=weatherstation
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

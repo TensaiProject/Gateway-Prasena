@@ -7,12 +7,69 @@ Main entry point for starting all services
 import sys
 import subprocess
 import argparse
+import yaml
 from pathlib import Path
 
 from weatherstation.utils.logger import get_logger, setup_logging
 
 setup_logging(log_level='INFO', log_file='./logs/main.log')
 logger = get_logger(__name__)
+
+
+# ==============================================================================
+# SERVICE WRAPPER FUNCTIONS (for multi-threading)
+# ==============================================================================
+
+def run_battery_service(config_path: str):
+    """Run battery sensor reader service"""
+    import yaml
+    from weatherstation.sensors.battery_reader import BatteryReaderService
+    from weatherstation.utils.logger import setup_logging
+
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+
+    log_config = config.get('logging', {})
+    setup_logging(
+        log_level=log_config.get('level', 'INFO'),
+        log_file='./logs/battery_reader.log'
+    )
+
+    db_path = config.get('database', {}).get('path', './data/weatherstation.db')
+    service = BatteryReaderService(config, db_path)
+    service.run()
+
+
+def run_upload_service(config_path: str):
+    """Run upload service"""
+    from weatherstation.services.upload_service import UploadService
+    from weatherstation.utils.logger import setup_logging
+
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+
+    log_config = config.get('logging', {})
+    setup_logging(
+        log_level=log_config.get('level', 'INFO'),
+        log_file='./logs/upload_service.log'
+    )
+
+    service = UploadService(config=config)
+    service.run()
+
+
+def run_weather_service(config_path: str):
+    """Run weather receiver service"""
+    from weatherstation.sensors.weather_receiver import main as weather_main
+    sys.argv = ['weather_receiver', '-c', config_path]
+    weather_main()
+
+
+def run_mqtt_service(config_path: str):
+    """Run MQTT publisher service"""
+    from weatherstation.services.mqtt_publisher import main as mqtt_main
+    sys.argv = ['mqtt_publisher', '-c', config_path]
+    mqtt_main()
 
 
 def main():
@@ -174,32 +231,51 @@ def run_service(service: str, config: str, test_mode: bool = False):
         return api_main()
 
     elif service == 'all':
-        logger.warning("Running all services in one process (testing only!)")
-        logger.warning("For production, use systemd services")
+        from weatherstation.service_manager import ServiceManager
 
-        # This is just for testing - not recommended for production
-        import threading
+        logger.info("=" * 60)
+        logger.info("Starting Weather Station Gateway (Production Mode)")
+        logger.info("Multi-threaded single-process execution")
+        logger.info("=" * 60)
 
-        services = ['battery', 'upload', 'weather', 'mqtt']
+        # Create service manager
+        manager = ServiceManager()
 
-        threads = []
-        for svc in services:
-            thread = threading.Thread(
-                target=run_service,
-                args=(svc, config, False),
-                daemon=True
-            )
-            thread.start()
-            threads.append(thread)
-            logger.info(f"Started {svc} service in thread")
+        # Register all services
+        manager.register_service(
+            name='battery',
+            target=run_battery_service,
+            args=(config,),
+            auto_restart=True
+        )
 
-        logger.info("All services started. Press Ctrl+C to stop.")
+        manager.register_service(
+            name='upload',
+            target=run_upload_service,
+            args=(config,),
+            auto_restart=True
+        )
 
+        manager.register_service(
+            name='weather',
+            target=run_weather_service,
+            args=(config,),
+            auto_restart=True
+        )
+
+        manager.register_service(
+            name='mqtt',
+            target=run_mqtt_service,
+            args=(config,),
+            auto_restart=True
+        )
+
+        # Run all services
         try:
-            for thread in threads:
-                thread.join()
-        except KeyboardInterrupt:
-            logger.info("Stopping all services...")
+            manager.run()
+        except Exception as e:
+            logger.error(f"ServiceManager error: {e}", exc_info=True)
+            return 1
 
         return 0
 
