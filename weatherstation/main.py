@@ -22,7 +22,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --service pzem           # Run PZEM reader service
+  %(prog)s --service battery        # Run battery sensor reader
   %(prog)s --service upload         # Run upload service
   %(prog)s --service weather        # Run weather station receiver
   %(prog)s --service mqtt           # Run MQTT subscriber
@@ -34,7 +34,7 @@ Examples:
 
     parser.add_argument(
         '--service',
-        choices=['pzem', 'upload', 'weather', 'mqtt', 'api', 'cleanup', 'all'],
+        choices=['battery', 'upload', 'weather', 'mqtt', 'api', 'cleanup', 'all'],
         help='Service to run'
     )
     parser.add_argument(
@@ -133,12 +133,12 @@ def register_device_interactive():
 def run_service(service: str, config: str, test_mode: bool = False):
     """Run specified service"""
 
-    if service == 'pzem':
-        from weatherstation.sensors.pzem_reader import main as pzem_main
-        sys.argv = ['pzem_reader', '-c', config]
+    if service == 'battery':
+        from weatherstation.sensors.battery_reader import main as battery_main
+        sys.argv = ['battery_reader', '-c', config]
         if test_mode:
             sys.argv.append('--test')
-        return pzem_main()
+        return battery_main()
 
     elif service == 'upload':
         from weatherstation.services.upload_service import main as upload_main
@@ -178,7 +178,7 @@ def run_service(service: str, config: str, test_mode: bool = False):
         # This is just for testing - not recommended for production
         import threading
 
-        services = ['pzem', 'upload', 'weather', 'mqtt']
+        services = ['battery', 'upload', 'weather', 'mqtt']
 
         threads = []
         for svc in services:
