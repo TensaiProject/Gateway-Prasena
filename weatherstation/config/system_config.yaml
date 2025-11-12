@@ -34,18 +34,19 @@ mqtt:
   # Topics
   topics:
     # Publish topics (outbound data)
-    pzem_data: "prasena/sensors"
+    sensor_data: "prasena/sensors"
     weather_data: "prasena/sensors/weather"
+    battery_data: "prasena/sensors/battery"
     system_status: "prasena/system/status"
 
     # Subscribe topics (inbound commands - future use)
     control: "prasena/control/#"
-    battery: "prasena/battery/+/data"
 
-pzem:
+battery_sensors:
   enabled: true
-  poll_interval: 10  # Poll PZEM every 10 seconds
-  config_file: "./config/pzem_config.yaml"
+  poll_interval: 10  # Poll battery sensors every 10 seconds
+  sampling_rate: 1   # Sample every 1 second
+  aggregation_window: 300  # Aggregate every 5 minutes (300 seconds)
 
 weather_station:
   enabled: true

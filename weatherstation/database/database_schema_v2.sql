@@ -1,51 +1,57 @@
 -- ============================================================================
 -- Weather Station & Energy Monitor System - Database Schema v2
+-- Optimized: Universal sensor_data table with device reference
 -- ============================================================================
 
 -- ============================================================================
 -- DEVICES TABLE
--- Stores all registered devices (PZEM, weather stations, batteries)
+-- Master reference for all sensors (battery, weather, etc)
+-- Internal ID (auto increment) + External unique sensor_id
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS devices (
-    device_id TEXT PRIMARY KEY,
-    device_type TEXT NOT NULL,  -- 'pzem', 'weather_station', 'battery', 'mqtt'
-    device_name TEXT,
-    device_model TEXT,
-    modbus_address INTEGER,  -- For PZEM devices (RS485 address)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,  -- Internal ID (small, efficient)
+    sensor_id TEXT UNIQUE NOT NULL,        -- External unique ID (ULID/UUID)
+    sensor_type TEXT NOT NULL,             -- 'battery', 'weather', 'mqtt'
+    sensor_name TEXT,
+    sensor_model TEXT,
+
+    -- Sensor-specific attributes
+    modbus_address INTEGER,                -- For RS485/Modbus sensors
     location TEXT,
     description TEXT,
-    metadata TEXT,  -- JSON for extra device-specific data
+    metadata TEXT,                         -- JSON for extra config
+
+    -- Status
     enabled INTEGER DEFAULT 1,
     online INTEGER DEFAULT 0,
     last_seen TIMESTAMP,
     error_count INTEGER DEFAULT 0,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(device_type);
+CREATE INDEX IF NOT EXISTS idx_devices_sensor_id ON devices(sensor_id);
+CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(sensor_type);
 CREATE INDEX IF NOT EXISTS idx_devices_enabled ON devices(enabled);
 CREATE INDEX IF NOT EXISTS idx_devices_modbus ON devices(modbus_address);
 
 -- ============================================================================
--- PZEM DATA TABLE
--- Stores energy monitoring data from PZEM sensors
+-- SENSOR DATA TABLE (UNIVERSAL)
+-- Single table for ALL sensor readings
+-- Data stored as JSON for flexibility
 -- ============================================================================
-CREATE TABLE IF NOT EXISTS pzem_data (
+CREATE TABLE IF NOT EXISTS sensor_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device_id TEXT NOT NULL,
-    modbus_address INTEGER,
+    device_id INTEGER NOT NULL,            -- Foreign key to devices.id (small int)
 
-    -- Electrical measurements
-    voltage REAL,           -- Volts (V)
-    current REAL,           -- Amperes (A)
-    power REAL,             -- Watts (W)
-    energy REAL,            -- Kilowatt-hours (kWh)
-    frequency REAL,         -- Hertz (Hz) - NULL for DC (PZEM-017)
-    power_factor REAL,      -- Power factor (0-1) - NULL for DC
+    -- Sensor readings (JSON)
+    -- Example battery: {"voltage": 12.5, "current": 2.3, "power": 28.75, "energy": 1.234}
+    -- Example weather: {"temp": 25.5, "humidity": 60, "wind_speed": 3.2}
+    data TEXT NOT NULL,                    -- JSON data
 
     -- Quality metrics
-    read_quality INTEGER DEFAULT 100,  -- Read quality percentage
+    read_quality INTEGER DEFAULT 100,
     error_code INTEGER DEFAULT 0,
 
     -- Upload tracking
@@ -55,58 +61,54 @@ CREATE TABLE IF NOT EXISTS pzem_data (
     -- Timestamp
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (device_id) REFERENCES devices(device_id)
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_pzem_device ON pzem_data(device_id);
-CREATE INDEX IF NOT EXISTS idx_pzem_uploaded ON pzem_data(uploaded);
-CREATE INDEX IF NOT EXISTS idx_pzem_timestamp ON pzem_data(timestamp);
-CREATE INDEX IF NOT EXISTS idx_pzem_upload_pending ON pzem_data(uploaded, timestamp);
+CREATE INDEX IF NOT EXISTS idx_sensor_device ON sensor_data(device_id);
+CREATE INDEX IF NOT EXISTS idx_sensor_uploaded ON sensor_data(uploaded);
+CREATE INDEX IF NOT EXISTS idx_sensor_timestamp ON sensor_data(timestamp);
+CREATE INDEX IF NOT EXISTS idx_sensor_pending ON sensor_data(device_id, uploaded, timestamp);
 
 -- ============================================================================
--- WEATHER DATA TABLE
--- Stores weather station readings
+-- WEATHER DATA TABLE (OPTIONAL - for structured weather data)
+-- If you prefer structured columns for weather instead of JSON
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS weather_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device_id TEXT NOT NULL,
+    device_id INTEGER NOT NULL,
 
     -- Temperature
-    temperature_outdoor REAL,  -- Celsius
-    temperature_indoor REAL,   -- Celsius
+    temperature_outdoor REAL,
+    temperature_indoor REAL,
 
     -- Humidity
-    humidity_outdoor REAL,     -- Percentage
-    humidity_indoor REAL,      -- Percentage
+    humidity_outdoor REAL,
+    humidity_indoor REAL,
 
     -- Pressure
-    pressure REAL,             -- hPa
+    pressure REAL,
 
     -- Wind
-    wind_speed REAL,           -- m/s
-    wind_direction REAL,       -- Degrees (0-360)
-    wind_gust REAL,            -- m/s
+    wind_speed REAL,
+    wind_direction REAL,
+    wind_gust REAL,
 
     -- Rain
-    rain_rate REAL,            -- mm/h
-    rain_daily REAL,           -- mm
-    rain_total REAL,           -- mm
+    rain_rate REAL,
+    rain_daily REAL,
+    rain_total REAL,
 
     -- Light
     uv_index REAL,
-    light_intensity REAL,      -- Lux
-
-    -- Extra data (JSON)
-    extra_data TEXT,
+    light_intensity REAL,
 
     -- Upload tracking
     uploaded INTEGER DEFAULT 0,
     uploaded_at TIMESTAMP,
 
-    -- Timestamp
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (device_id) REFERENCES devices(device_id)
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_weather_device ON weather_data(device_id);
@@ -115,21 +117,21 @@ CREATE INDEX IF NOT EXISTS idx_weather_timestamp ON weather_data(timestamp);
 
 -- ============================================================================
 -- MQTT DATA TABLE
--- Stores data received via MQTT
+-- Raw MQTT messages
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS mqtt_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device_id TEXT,
+    device_id INTEGER,
     topic TEXT NOT NULL,
     payload TEXT NOT NULL,  -- JSON payload
     qos INTEGER,
 
-    -- Upload tracking
     uploaded INTEGER DEFAULT 0,
     uploaded_at TIMESTAMP,
 
-    -- Timestamp
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_mqtt_topic ON mqtt_data(topic);
@@ -137,54 +139,19 @@ CREATE INDEX IF NOT EXISTS idx_mqtt_uploaded ON mqtt_data(uploaded);
 CREATE INDEX IF NOT EXISTS idx_mqtt_timestamp ON mqtt_data(timestamp);
 
 -- ============================================================================
--- BATTERY DATA TABLE (uses PZEM-017 DC)
--- Battery monitoring via PZEM DC sensors
--- Note: Battery data is actually stored in pzem_data table
--- This table is for aggregated battery metrics
--- ============================================================================
-CREATE TABLE IF NOT EXISTS battery_data (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device_id TEXT NOT NULL,
-
-    -- Battery metrics
-    voltage REAL,              -- Volts
-    current REAL,              -- Amperes (+ charging, - discharging)
-    power REAL,                -- Watts
-    state_of_charge REAL,      -- Percentage (calculated)
-    temperature REAL,          -- Celsius
-
-    -- Derived metrics
-    charge_cycles INTEGER,
-    health_percentage REAL,
-
-    -- Upload tracking
-    uploaded INTEGER DEFAULT 0,
-    uploaded_at TIMESTAMP,
-
-    -- Timestamp
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    FOREIGN KEY (device_id) REFERENCES devices(device_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_battery_device ON battery_data(device_id);
-CREATE INDEX IF NOT EXISTS idx_battery_uploaded ON battery_data(uploaded);
-CREATE INDEX IF NOT EXISTS idx_battery_timestamp ON battery_data(timestamp);
-
--- ============================================================================
 -- ERROR LOGS TABLE
 -- Device-specific error logging
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS device_error_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device_id TEXT,
+    device_id INTEGER,
     error_type TEXT NOT NULL,
     error_message TEXT,
     error_code INTEGER,
     extra_info TEXT,  -- JSON
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (device_id) REFERENCES devices(device_id)
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_errors_device ON device_error_logs(device_id);
@@ -196,12 +163,14 @@ CREATE INDEX IF NOT EXISTS idx_errors_timestamp ON device_error_logs(timestamp);
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS system_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    level TEXT NOT NULL,  -- 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
+    level TEXT NOT NULL,
     module TEXT,
     message TEXT NOT NULL,
-    device_id TEXT,
-    extra_info TEXT,  -- JSON
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    device_id INTEGER,
+    extra_info TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level);
@@ -214,7 +183,7 @@ CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp);
 CREATE TABLE IF NOT EXISTS upload_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     batch_id TEXT NOT NULL,
-    data_type TEXT NOT NULL,  -- 'pzem', 'weather', 'battery', 'mqtt'
+    data_type TEXT NOT NULL,  -- 'battery', 'weather', 'mqtt'
     record_count INTEGER,
     status TEXT NOT NULL,  -- 'success', 'failed', 'partial'
     http_status_code INTEGER,
@@ -240,7 +209,6 @@ CREATE TABLE IF NOT EXISTS system_config (
 -- INITIAL DATA
 -- ============================================================================
 
--- System version
 INSERT OR REPLACE INTO system_config (config_key, config_value, description)
 VALUES ('schema_version', '2.0', 'Database schema version');
 
