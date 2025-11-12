@@ -44,7 +44,7 @@ class CleanupService:
         logger.info(f"Cleanup threshold: {days_old} days")
         logger.info(f"Mode: {'One-time' if run_once else 'Continuous'}")
 
-    def print_stats(self):
+    def print_stats(self) -> Dict[str, Any]:
         """Print current database statistics"""
         logger.info("=" * 60)
         logger.info("Database Statistics")
@@ -68,7 +68,7 @@ class CleanupService:
 
         return stats
 
-    def run_cleanup(self, dry_run: bool = False):
+    def run_cleanup(self, dry_run: bool = False) -> Dict[str, Any]:
         """
         Run cleanup operation
 
@@ -112,13 +112,16 @@ class CleanupService:
 
         return results
 
-    def run(self, interval: int = 3600, dry_run: bool = False):
+    def run(self, interval: int = 3600, dry_run: bool = False) -> int:
         """
         Main service loop
 
         Args:
             interval: Cleanup interval in seconds (default: 3600 = 1 hour)
             dry_run: If True, only show what would be deleted
+
+        Returns:
+            Exit code (0 for success)
         """
         logger.info("=" * 60)
         logger.info("Cleanup Service Starting...")
@@ -158,7 +161,7 @@ class CleanupService:
 
         return 0
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the service"""
         logger.info("Cleanup Service stopping...")
         self.running = False

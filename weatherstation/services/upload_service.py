@@ -175,7 +175,7 @@ class UploadService:
             logger.error(f"Upload error: {e}", exc_info=True)
             return False
 
-    def run_auto_cleanup(self):
+    def run_auto_cleanup(self) -> None:
         """Run automatic cleanup of old uploaded data"""
         if not self.auto_cleanup_enabled:
             return
@@ -198,7 +198,7 @@ class UploadService:
         except Exception as e:
             logger.error(f"Auto-cleanup error: {e}", exc_info=True)
 
-    def upload_all_pending(self):
+    def upload_all_pending(self) -> None:
         """Upload all pending data (PZEM, weather, battery)"""
         logger.info("Starting upload cycle...")
 
@@ -238,7 +238,7 @@ class UploadService:
         if upload_success:
             self.run_auto_cleanup()
 
-    def run(self):
+    def run(self) -> None:
         """Main service loop"""
         logger.info("=" * 60)
         logger.info("Upload Service starting...")
@@ -262,7 +262,7 @@ class UploadService:
         finally:
             self.stop()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the service"""
         logger.info("Upload Service stopping...")
         self.running = False
