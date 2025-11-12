@@ -1,0 +1,85 @@
+# Weather Station System Configuration
+
+system:
+  name: "Weather Station Local Server"
+  location: "Your Location"
+  timezone: "Asia/Jakarta"
+
+database:
+  path: "./data/weatherstation.db"
+  backup_enabled: true
+  backup_interval: 86400  # 24 hours in seconds
+  auto_cleanup_enabled: true  # Enable automatic cleanup of uploaded data
+  auto_cleanup_days: 7  # Delete uploaded data older than 7 days
+
+mqtt:
+  # Protocol: tcp, ws (WebSocket), or wss (WebSocket Secure)
+  protocol: "wss"
+
+  # EMQX Broker (Prasena Energy - Staging)
+  broker_url: "wss://emqx-staging.prasenaenergy.com/mqtt"
+  broker_host: "emqx-staging.prasenaenergy.com"
+  broker_port: 443  # WSS uses port 443
+
+  # Authentication
+  username: "prasena"
+  password: "emqxoversecurewebsocket"
+
+  # Connection settings
+  qos: 1
+  clean_session: true
+  keepalive: 60
+  reconnect_delay: 5  # seconds
+
+  # Topics
+  topics:
+    # Publish topics (outbound data)
+    pzem_data: "prasena/sensors"
+    weather_data: "prasena/sensors/weather"
+    system_status: "prasena/system/status"
+
+    # Subscribe topics (inbound commands - future use)
+    control: "prasena/control/#"
+    battery: "prasena/battery/+/data"
+
+pzem:
+  enabled: true
+  poll_interval: 10  # Poll PZEM every 10 seconds
+  config_file: "./config/pzem_config.yaml"
+
+weather_station:
+  enabled: true
+  receiver_port: 8080
+  protocol: "http"  # or "tcp"
+  device_id: "weather_01"
+
+upload:
+  enabled: true
+  interval: 60  # Upload interval in seconds (1-5 minutes = 60-300)
+  batch_size: 100  # Number of records per batch
+  max_retry: 5  # Maximum retry attempts
+  retry_interval: 30  # Retry interval in seconds
+  main_server_url: "http://your-main-server.com/api/data"
+  api_key: "your_api_key_here"  # CHANGE THIS!
+  timeout: 30  # Request timeout in seconds
+
+api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+  cors_enabled: true
+  cors_origins: ["*"]
+
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_to_file: true
+  log_file: "./logs/system.log"
+  max_file_size: 10485760  # 10MB
+  backup_count: 5
+
+# Device auto-discovery (optional)
+discovery:
+  enabled: false  # Set to true to enable auto-discovery
+  scan_interval: 3600  # Scan every hour
+  pzem_address_range: [1, 20]  # Scan addresses 1-20

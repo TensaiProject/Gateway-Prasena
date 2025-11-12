@@ -1,0 +1,19 @@
+[Unit]
+Description=Weather Station Data Cleanup Service
+After=network.target
+
+[Service]
+Type=oneshot
+User=weatherstation1
+Group=weatherstation1
+WorkingDirectory=/home/weatherstation1/sistem
+Environment="PATH=/home/weatherstation1/sistem/venv/bin"
+ExecStart=/home/weatherstation1/sistem/venv/bin/python3 /home/weatherstation1/sistem/run.py --service cleanup
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=weatherstation-cleanup
+
+[Install]
+WantedBy=multi-user.target
