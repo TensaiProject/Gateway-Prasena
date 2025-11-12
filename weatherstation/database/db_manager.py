@@ -69,10 +69,10 @@ class DatabaseManager:
 
     def register_device(
         self,
-        device_id: str,
-        device_type: str,
-        device_name: str = None,
-        device_model: str = None,
+        sensor_id: str,
+        sensor_type: str,
+        sensor_name: str = None,
+        sensor_model: str = None,
         modbus_address: int = None,
         location: str = None,
         description: str = None,
@@ -83,14 +83,14 @@ class DatabaseManager:
         Register new device or update existing
 
         Args:
-            device_id: Unique device identifier
-            device_type: Type of device ('pzem', 'weather_station', 'battery')
-            device_name: Human-readable name
-            device_model: Device model
-            modbus_address: Modbus address (for PZEM)
+            sensor_id: Unique sensor identifier (ULID/UUID)
+            sensor_type: Type of sensor ('battery', 'weather', 'mqtt')
+            sensor_name: Human-readable name
+            sensor_model: Sensor model
+            modbus_address: Modbus address (for RS485 sensors)
             location: Physical location
             description: Description
-            enabled: Enable device
+            enabled: Enable sensor
             **kwargs: Additional metadata
 
         Returns:
@@ -102,20 +102,20 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 conn.execute("""
                     INSERT OR REPLACE INTO devices (
-                        device_id, device_type, device_name, device_model,
+                        sensor_id, sensor_type, sensor_name, sensor_model,
                         modbus_address, location, description, metadata, enabled
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    device_id, device_type, device_name, device_model,
+                    sensor_id, sensor_type, sensor_name, sensor_model,
                     modbus_address, location, description, metadata,
                     1 if enabled else 0
                 ))
 
-            logger.info(f"Registered device: {device_id} ({device_type})")
+            logger.info(f"Registered device: {sensor_id} ({sensor_type})")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to register device {device_id}: {e}")
+            logger.error(f"Failed to register device {sensor_id}: {e}")
             return False
 
     def get_device(self, device_id: str) -> Optional[Dict[str, Any]]:
@@ -128,21 +128,21 @@ class DatabaseManager:
 
             return dict(row) if row else None
 
-    def get_enabled_devices(self, device_type: str = None) -> List[Dict[str, Any]]:
+    def get_enabled_devices(self, sensor_type: str = None) -> List[Dict[str, Any]]:
         """
         Get all enabled devices
 
         Args:
-            device_type: Filter by device type (optional)
+            sensor_type: Filter by sensor type (optional)
 
         Returns:
             List of device dictionaries
         """
         with self.get_connection() as conn:
-            if device_type:
+            if sensor_type:
                 rows = conn.execute(
-                    "SELECT * FROM devices WHERE enabled = 1 AND device_type = ?",
-                    (device_type,)
+                    "SELECT * FROM devices WHERE enabled = 1 AND sensor_type = ?",
+                    (sensor_type,)
                 ).fetchall()
             else:
                 rows = conn.execute(
@@ -202,7 +202,136 @@ class DatabaseManager:
             return False
 
     # ============================================================================
-    # PZEM DATA
+    # SENSOR DATA (UNIVERSAL)
+    # ============================================================================
+
+    def insert_sensor_data(
+        self,
+        sensor_id: str,
+        data: Dict[str, Any],
+        read_quality: int = 100,
+        error_code: int = 0
+    ) -> bool:
+        """
+        Insert sensor data to universal sensor_data table
+
+        Args:
+            sensor_id: Sensor ID (external ULID/UUID)
+            data: Sensor readings as dictionary (will be JSON encoded)
+            read_quality: Quality percentage (0-100)
+            error_code: Error code (0 = no error)
+
+        Returns:
+            True if successful
+        """
+        try:
+            # Get internal device_id from sensor_id
+            with self.get_connection() as conn:
+                row = conn.execute(
+                    "SELECT id FROM devices WHERE sensor_id = ?",
+                    (sensor_id,)
+                ).fetchone()
+
+                if not row:
+                    logger.error(f"Sensor not found: {sensor_id}")
+                    return False
+
+                device_id = row['id']
+
+                # Insert sensor data
+                timestamp = data.pop('timestamp', datetime.utcnow().isoformat() + 'Z')
+                data_json = json.dumps(data)
+
+                conn.execute("""
+                    INSERT INTO sensor_data (
+                        device_id, data, read_quality, error_code, timestamp
+                    ) VALUES (?, ?, ?, ?, ?)
+                """, (
+                    device_id,
+                    data_json,
+                    read_quality,
+                    error_code,
+                    timestamp
+                ))
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to insert sensor data for {sensor_id}: {e}")
+            return False
+
+    def get_pending_sensor_data(
+        self,
+        sensor_type: str = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Get pending sensor data for upload
+
+        Args:
+            sensor_type: Filter by sensor type (optional)
+            limit: Maximum records to return
+
+        Returns:
+            List of sensor data records with device info
+        """
+        with self.get_connection() as conn:
+            if sensor_type:
+                query = """
+                    SELECT
+                        sd.id,
+                        d.sensor_id,
+                        d.sensor_type,
+                        sd.data,
+                        sd.timestamp
+                    FROM sensor_data sd
+                    JOIN devices d ON sd.device_id = d.id
+                    WHERE sd.uploaded = 0 AND d.sensor_type = ?
+                    ORDER BY sd.timestamp ASC
+                    LIMIT ?
+                """
+                rows = conn.execute(query, (sensor_type, limit)).fetchall()
+            else:
+                query = """
+                    SELECT
+                        sd.id,
+                        d.sensor_id,
+                        d.sensor_type,
+                        sd.data,
+                        sd.timestamp
+                    FROM sensor_data sd
+                    JOIN devices d ON sd.device_id = d.id
+                    WHERE sd.uploaded = 0
+                    ORDER BY sd.timestamp ASC
+                    LIMIT ?
+                """
+                rows = conn.execute(query, (limit,)).fetchall()
+
+            # Parse JSON data
+            results = []
+            for row in rows:
+                record = dict(row)
+                record['data'] = json.loads(record['data'])
+                results.append(record)
+
+            return results
+
+    def mark_sensor_data_uploaded(self, record_ids: List[int]) -> bool:
+        """Mark sensor data records as uploaded"""
+        try:
+            with self.get_connection() as conn:
+                placeholders = ','.join('?' * len(record_ids))
+                conn.execute(
+                    f"UPDATE sensor_data SET uploaded = 1, uploaded_at = ? WHERE id IN ({placeholders})",
+                    [datetime.utcnow().isoformat() + 'Z'] + record_ids
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to mark sensor data as uploaded: {e}")
+            return False
+
+    # ============================================================================
+    # LEGACY: PZEM DATA (for backward compatibility)
     # ============================================================================
 
     def insert_pzem_data(self, device_id: str, reading) -> bool:
