@@ -14,6 +14,9 @@ from weatherstation.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Current schema version
+SCHEMA_VERSION = "2.0"
+
 
 class DatabaseManager:
     """
@@ -51,17 +54,159 @@ class DatabaseManager:
             conn.close()
 
     def _initialize_database(self):
-        """Initialize database schema if not exists"""
+        """
+        Initialize or migrate database
+        - If database doesn't exist, create from schema
+        - If exists, check version and migrate if needed
+        """
+        db_exists = Path(self.db_path).exists()
+
+        if not db_exists:
+            logger.info("Database not found, creating new database...")
+            self._create_database()
+        else:
+            logger.info("Database found, checking schema version...")
+            self._check_and_migrate()
+
+    def _create_database(self):
+        """Create new database from schema file"""
         schema_file = Path(__file__).parent / 'database_schema_v2.sql'
 
         if not schema_file.exists():
-            logger.warning(f"Schema file not found: {schema_file}")
-            return
+            raise FileNotFoundError(f"Schema file not found: {schema_file}")
 
-        with self.get_connection() as conn:
-            with open(schema_file, 'r') as f:
-                conn.executescript(f.read())
-        logger.info("Database initialized successfully")
+        logger.info(f"Creating database from schema: {schema_file}")
+
+        try:
+            with self.get_connection() as conn:
+                with open(schema_file, 'r') as f:
+                    conn.executescript(f.read())
+
+            logger.info(f"Database created successfully (version {SCHEMA_VERSION})")
+
+        except Exception as e:
+            logger.error(f"Failed to create database: {e}")
+            raise
+
+    def _check_and_migrate(self):
+        """Check schema version and migrate if needed"""
+        try:
+            current_version = self._get_schema_version()
+
+            if current_version is None:
+                logger.warning("No schema version found in database")
+                logger.warning("Database may be corrupted or from old version")
+                self._set_schema_version(SCHEMA_VERSION)
+                return
+
+            if current_version == SCHEMA_VERSION:
+                logger.info(f"Database schema up-to-date (version {SCHEMA_VERSION})")
+                return
+
+            # Version mismatch - migration needed
+            logger.warning(f"Schema version mismatch: DB={current_version}, Required={SCHEMA_VERSION}")
+            logger.info("Running database migration...")
+
+            self._migrate_database(current_version, SCHEMA_VERSION)
+
+        except Exception as e:
+            logger.error(f"Schema check failed: {e}")
+            raise
+
+    def _get_schema_version(self) -> Optional[str]:
+        """Get current schema version from database"""
+        try:
+            with self.get_connection() as conn:
+                # Check if system_config table exists
+                result = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='system_config'"
+                ).fetchone()
+
+                if not result:
+                    return None
+
+                # Get schema version
+                result = conn.execute(
+                    "SELECT config_value FROM system_config WHERE config_key='schema_version'"
+                ).fetchone()
+
+                return result['config_value'] if result else None
+
+        except Exception as e:
+            logger.error(f"Failed to get schema version: {e}")
+            return None
+
+    def _set_schema_version(self, version: str):
+        """Update schema version in database"""
+        try:
+            with self.get_connection() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO system_config (config_key, config_value, description)
+                    VALUES ('schema_version', ?, 'Database schema version')
+                """, (version,))
+
+            logger.info(f"Schema version set to {version}")
+
+        except Exception as e:
+            logger.error(f"Failed to set schema version: {e}")
+            raise
+
+    def _migrate_database(self, from_version: str, to_version: str):
+        """
+        Migrate database from one version to another
+
+        Args:
+            from_version: Current database version
+            to_version: Target schema version
+        """
+        logger.info(f"Migrating database from {from_version} to {to_version}")
+
+        # Migration logic based on version
+        if from_version == "1.0" and to_version == "2.0":
+            self._migrate_v1_to_v2()
+        else:
+            logger.warning(f"No migration path defined from {from_version} to {to_version}")
+            logger.warning("Recommend: backup database and recreate from schema")
+
+        # Update version
+        self._set_schema_version(to_version)
+
+    def _migrate_v1_to_v2(self):
+        """Migrate from schema v1.0 to v2.0"""
+        logger.info("Running migration v1.0 -> v2.0")
+
+        try:
+            with self.get_connection() as conn:
+                # Add new sensor_data table if not exists
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS sensor_data (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        device_id INTEGER NOT NULL,
+                        data TEXT NOT NULL,
+                        read_quality INTEGER DEFAULT 100,
+                        uploaded INTEGER DEFAULT 0,
+                        uploaded_at TIMESTAMP,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+                    )
+                """)
+
+                # Add indexes
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_sensor_device ON sensor_data(device_id)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_sensor_uploaded ON sensor_data(uploaded)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_sensor_timestamp ON sensor_data(timestamp)
+                """)
+
+            logger.info("Migration v1.0 -> v2.0 complete")
+
+        except Exception as e:
+            logger.error(f"Migration failed: {e}")
+            raise
 
     # ============================================================================
     # DEVICE MANAGEMENT
