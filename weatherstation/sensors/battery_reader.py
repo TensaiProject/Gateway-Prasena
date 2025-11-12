@@ -458,18 +458,22 @@ class BatteryReaderService:
                         # Get device from database
                         devices = self.db.get_enabled_devices('battery')
                         if idx < len(devices):
-                            device_id = devices[idx]['id']
+                            device_internal_id = devices[idx]['id']
+                            sensor_id = devices[idx]['sensor_id']
 
                             # Add to aggregation buffer
-                            self.buffers[device_id].add_sample(reading)
+                            self.buffers[device_internal_id].add_sample(reading)
 
                             # Check if should aggregate
-                            if self.buffers[device_id].should_aggregate():
-                                aggregated = self.buffers[device_id].aggregate()
+                            if self.buffers[device_internal_id].should_aggregate():
+                                aggregated = self.buffers[device_internal_id].aggregate()
                                 if aggregated:
-                                    # Store to database (will implement after db_manager update)
-                                    logger.info(f"Aggregated data: {aggregated}")
-                                    # TODO: db.insert_sensor_data(device_id, aggregated)
+                                    # Store aggregated data to database
+                                    success = self.db.insert_sensor_data(sensor_id, aggregated)
+                                    if success:
+                                        logger.info(f"Stored aggregated data for {sensor_id}")
+                                    else:
+                                        logger.error(f"Failed to store data for {sensor_id}")
 
                     except Exception as e:
                         logger.error(f"Error reading sensor {idx}: {e}")
