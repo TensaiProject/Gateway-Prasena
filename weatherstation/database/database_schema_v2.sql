@@ -11,7 +11,7 @@
 CREATE TABLE IF NOT EXISTS devices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,  -- Internal ID (small, efficient)
     sensor_id TEXT UNIQUE NOT NULL,        -- External unique ID (ULID/UUID)
-    sensor_type TEXT NOT NULL,             -- 'battery', 'weather', 'mqtt'
+    sensor_type TEXT NOT NULL,             -- 'battery', 'weather'
     sensor_name TEXT,
     sensor_model TEXT,
 
@@ -116,29 +116,6 @@ CREATE INDEX IF NOT EXISTS idx_weather_uploaded ON weather_data(uploaded);
 CREATE INDEX IF NOT EXISTS idx_weather_timestamp ON weather_data(timestamp);
 
 -- ============================================================================
--- MQTT DATA TABLE
--- Raw MQTT messages
--- ============================================================================
-CREATE TABLE IF NOT EXISTS mqtt_data (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device_id INTEGER,
-    topic TEXT NOT NULL,
-    payload TEXT NOT NULL,  -- JSON payload
-    qos INTEGER,
-
-    uploaded INTEGER DEFAULT 0,
-    uploaded_at TIMESTAMP,
-
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_mqtt_topic ON mqtt_data(topic);
-CREATE INDEX IF NOT EXISTS idx_mqtt_uploaded ON mqtt_data(uploaded);
-CREATE INDEX IF NOT EXISTS idx_mqtt_timestamp ON mqtt_data(timestamp);
-
--- ============================================================================
 -- ERROR LOGS TABLE
 -- Device-specific error logging
 -- ============================================================================
@@ -183,7 +160,7 @@ CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp);
 CREATE TABLE IF NOT EXISTS upload_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     batch_id TEXT NOT NULL,
-    data_type TEXT NOT NULL,  -- 'battery', 'weather', 'mqtt'
+    data_type TEXT NOT NULL,  -- 'battery', 'weather'
     record_count INTEGER,
     status TEXT NOT NULL,  -- 'success', 'failed', 'partial'
     http_status_code INTEGER,

@@ -84,7 +84,7 @@ class DatabaseManager:
 
         Args:
             sensor_id: Unique sensor identifier (ULID/UUID)
-            sensor_type: Type of sensor ('battery', 'weather', 'mqtt')
+            sensor_type: Type of sensor ('battery', 'weather')
             sensor_name: Human-readable name
             sensor_model: Sensor model
             modbus_address: Modbus address (for RS485 sensors)
@@ -499,18 +499,10 @@ class DatabaseManager:
                 row = conn.execute(
                     "SELECT COUNT(*) as count FROM weather_data WHERE uploaded = 0"
                 ).fetchone()
-            elif data_type == 'mqtt':
-                row = conn.execute(
-                    "SELECT COUNT(*) as count FROM mqtt_data WHERE uploaded = 0"
-                ).fetchone()
             else:
-                # Total
+                # Total - use sensor_data table
                 row = conn.execute("""
-                    SELECT
-                        (SELECT COUNT(*) FROM pzem_data WHERE uploaded = 0) +
-                        (SELECT COUNT(*) FROM weather_data WHERE uploaded = 0) +
-                        (SELECT COUNT(*) FROM mqtt_data WHERE uploaded = 0)
-                    as count
+                    SELECT COUNT(*) as count FROM sensor_data WHERE uploaded = 0
                 """).fetchone()
 
             return row['count'] if row else 0
@@ -529,7 +521,7 @@ class DatabaseManager:
         Delete uploaded data older than specified days
 
         Args:
-            data_type: Type of data ('pzem', 'weather', 'mqtt', 'battery')
+            data_type: Type of data ('battery', 'weather')
             days_old: Delete data older than this many days
             dry_run: If True, only count records without deleting
 
@@ -537,10 +529,10 @@ class DatabaseManager:
             Dictionary with deletion statistics
         """
         try:
+            # Legacy support - will be removed
             table_map = {
                 'pzem': 'pzem_data',
                 'weather': 'weather_data',
-                'mqtt': 'mqtt_data',
                 'battery': 'battery_data'
             }
 
@@ -658,8 +650,8 @@ class DatabaseManager:
             'days_old': days_old
         }
 
-        # Cleanup each data type
-        for data_type in ['pzem', 'weather', 'mqtt', 'battery']:
+        # Cleanup each data type (legacy tables)
+        for data_type in ['pzem', 'weather', 'battery']:
             result = self.delete_uploaded_data(data_type, days_old, dry_run)
             results['data_types'][data_type] = result
             results['total_records_deleted'] += result.get('records_deleted', 0)
@@ -699,11 +691,10 @@ class DatabaseManager:
             ).fetchall()
             existing_table_names = [t['name'] for t in existing_tables]
 
-            # Stats for each data type
+            # Stats for each data type (legacy tables)
             for data_type, table_name in [
                 ('pzem', 'pzem_data'),
                 ('weather', 'weather_data'),
-                ('mqtt', 'mqtt_data'),
                 ('battery', 'battery_data')
             ]:
                 # Skip if table doesn't exist

@@ -99,7 +99,7 @@ class UploadService:
         Upload pending sensor data for specified type
 
         Args:
-            sensor_type: Type of sensor ('battery', 'weather', 'mqtt')
+            sensor_type: Type of sensor ('battery', 'weather')
 
         Returns:
             True if upload successful, False otherwise
@@ -210,20 +210,18 @@ class UploadService:
             logger.error(f"Auto-cleanup error: {e}", exc_info=True)
 
     def upload_all_pending(self) -> None:
-        """Upload all pending data (battery, weather, mqtt)"""
+        """Upload all pending data (battery, weather)"""
         logger.info("Starting upload cycle...")
 
         # Check pending counts
         battery_pending = self.db.get_pending_upload_count('battery')
         weather_pending = self.db.get_pending_upload_count('weather')
-        mqtt_pending = self.db.get_pending_upload_count('mqtt')
 
         logger.info(
-            f"Pending: Battery={battery_pending}, "
-            f"Weather={weather_pending}, MQTT={mqtt_pending}"
+            f"Pending: Battery={battery_pending}, Weather={weather_pending}"
         )
 
-        if battery_pending == 0 and weather_pending == 0 and mqtt_pending == 0:
+        if battery_pending == 0 and weather_pending == 0:
             logger.info("No pending data to upload")
 
             # Still run cleanup even if no pending uploads
@@ -250,15 +248,6 @@ class UploadService:
                 upload_success = True
             else:
                 logger.warning("Weather data upload failed, will retry")
-
-        # MQTT data
-        if mqtt_pending > 0:
-            success = self.upload_sensor_data('mqtt')
-            if success:
-                logger.info("MQTT data upload complete")
-                upload_success = True
-            else:
-                logger.warning("MQTT data upload failed, will retry")
 
         logger.info("Upload cycle complete")
 
