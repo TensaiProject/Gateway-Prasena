@@ -25,6 +25,7 @@ Examples:
   %(prog)s --service battery        # Run battery sensor reader
   %(prog)s --service upload         # Run upload service
   %(prog)s --service weather        # Run weather station receiver
+  %(prog)s --service mqtt           # Run MQTT publisher
   %(prog)s --service api            # Run web API server
   %(prog)s --service cleanup        # Run data cleanup service
   %(prog)s --service all            # Run all services (testing only)
@@ -35,7 +36,7 @@ Examples:
 
     parser.add_argument(
         '--service',
-        choices=['battery', 'upload', 'weather', 'api', 'cleanup', 'all'],
+        choices=['battery', 'upload', 'weather', 'mqtt', 'api', 'cleanup', 'all'],
         help='Service to run'
     )
     parser.add_argument(
@@ -149,9 +150,14 @@ def run_service(service: str, config: str, test_mode: bool = False):
         return upload_main()
 
     elif service == 'weather':
-        from weatherstation.sensors.weather_station import main as weather_main
-        sys.argv = ['weather_station', '-c', config]
+        from weatherstation.sensors.weather_receiver import main as weather_main
+        sys.argv = ['weather_receiver', '-c', config]
         return weather_main()
+
+    elif service == 'mqtt':
+        from weatherstation.services.mqtt_publisher import main as mqtt_main
+        sys.argv = ['mqtt_publisher', '-c', config]
+        return mqtt_main()
 
     elif service == 'cleanup':
         from weatherstation.services.cleanup_service import main as cleanup_main
@@ -174,7 +180,7 @@ def run_service(service: str, config: str, test_mode: bool = False):
         # This is just for testing - not recommended for production
         import threading
 
-        services = ['battery', 'upload', 'weather']
+        services = ['battery', 'upload', 'weather', 'mqtt']
 
         threads = []
         for svc in services:

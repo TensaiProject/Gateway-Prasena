@@ -145,9 +145,10 @@ class UploadService:
             if response.status_code == 200:
                 logger.info(f"Upload successful: {len(pending)} records")
 
-                # Mark as uploaded
+                # Delete immediately after successful upload
                 record_ids = [r['id'] for r in pending]
-                self.db.mark_sensor_data_uploaded(record_ids)
+                deleted = self.db.delete_sensor_data(record_ids)
+                logger.info(f"Deleted {deleted} uploaded records immediately")
 
                 # Log success
                 self.db.log_upload(

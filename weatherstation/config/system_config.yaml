@@ -9,8 +9,8 @@ database:
   path: "./data/weatherstation.db"
   backup_enabled: true
   backup_interval: 86400  # 24 hours in seconds
-  auto_cleanup_enabled: true  # Enable automatic cleanup of uploaded data
-  auto_cleanup_days: 7  # Delete uploaded data older than 7 days
+  auto_cleanup_enabled: true  # Safety net: cleanup orphaned uploaded records
+  auto_cleanup_days: 1  # Delete uploaded data older than 1 day (safety net only)
 
 mqtt:
   # Protocol: tcp, ws (WebSocket), or wss (WebSocket Secure)
@@ -50,9 +50,28 @@ battery_sensors:
 
 weather_station:
   enabled: true
-  receiver_port: 8080
-  protocol: "http"  # or "tcp"
-  device_id: "weather_01"
+  http_port: 5001  # HTTP receiver port
+  endpoint: "/data"  # POST endpoint for weather data
+
+  # Dynamic field mapping: internal_name -> external_field_name
+  # Weather station sends data with external names, gateway maps to internal
+  field_mapping:
+    temperature: "temp"      # Internal: temperature, External: temp
+    humidity: "hum"          # Internal: humidity, External: hum
+    pressure: "press"        # Internal: pressure, External: press
+    wind_speed: "wind"       # Internal: wind_speed, External: wind
+    rainfall: "rain"         # Internal: rainfall, External: rain
+    # Add more mappings as needed when documentation arrives
+
+  # Validation rules
+  validation:
+    required_fields: ["temp"]  # At minimum require temperature
+    value_ranges:
+      temp: [-40, 80]          # Temperature range in Celsius
+      hum: [0, 100]            # Humidity percentage
+      press: [800, 1200]       # Pressure in hPa
+      wind: [0, 200]           # Wind speed in km/h
+      rain: [0, 500]           # Rainfall in mm
 
 upload:
   enabled: true
@@ -76,6 +95,8 @@ logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
   log_to_file: true
   log_file: "./logs/system.log"
+  weather_log_file: "./logs/weather_receiver.log"
+  mqtt_log_file: "./logs/mqtt_publisher.log"
   max_file_size: 10485760  # 10MB
   backup_count: 5
 

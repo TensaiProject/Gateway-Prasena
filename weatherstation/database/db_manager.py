@@ -316,6 +316,34 @@ class DatabaseManager:
 
             return results
 
+    def delete_sensor_data(self, record_ids: List[int]) -> int:
+        """
+        Delete sensor data records by IDs (immediate delete after upload)
+
+        Args:
+            record_ids: List of record IDs to delete
+
+        Returns:
+            Number of records deleted
+        """
+        if not record_ids:
+            return 0
+
+        try:
+            with self.get_connection() as conn:
+                placeholders = ','.join('?' * len(record_ids))
+                result = conn.execute(
+                    f"DELETE FROM sensor_data WHERE id IN ({placeholders})",
+                    record_ids
+                )
+                deleted = result.rowcount
+                logger.info(f"Deleted {deleted} sensor data records")
+                return deleted
+
+        except Exception as e:
+            logger.error(f"Failed to delete sensor data: {e}")
+            return 0
+
     def mark_sensor_data_uploaded(self, record_ids: List[int]) -> bool:
         """Mark sensor data records as uploaded"""
         try:
