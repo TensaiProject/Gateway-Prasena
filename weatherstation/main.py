@@ -167,9 +167,9 @@ def run_service(service: str, config: str, test_mode: bool = False):
         return cleanup_main()
 
     elif service == 'api':
-        logger.info("Starting Web API...")
-        logger.info("API not yet implemented")
-        return 1
+        from weatherstation.api.web_server import main as api_main
+        sys.argv = ['api_server', '--config', config]
+        return api_main()
 
     elif service == 'all':
         logger.warning("Running all services in one process (testing only!)")
