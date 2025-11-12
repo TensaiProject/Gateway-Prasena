@@ -1,0 +1,20 @@
+# Core dependencies
+PyYAML>=6.0.1
+requests>=2.31.0
+
+# MQTT client (for mqtt_subscriber service)
+paho-mqtt>=1.6.1
+
+# Modbus communication (for PZEM sensors)
+minimalmodbus>=2.1.1
+pyserial>=3.5
+
+# Web server (for configuration API)
+Flask>=3.0.0
+Flask-CORS>=4.0.0
+
+# Development dependencies (optional)
+# pytest>=7.4.0
+# pytest-cov>=4.1.0
+# mypy>=1.7.0
+# ruff>=0.1.0
