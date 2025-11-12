@@ -94,26 +94,37 @@ class UploadService:
             }
         }
 
-    def upload_pzem_data(self) -> bool:
-        """Upload pending PZEM data"""
+    def upload_sensor_data(self, sensor_type: str) -> bool:
+        """
+        Upload pending sensor data for specified type
+
+        Args:
+            sensor_type: Type of sensor ('battery', 'weather', 'mqtt')
+
+        Returns:
+            True if upload successful, False otherwise
+        """
         try:
             # Get pending data
-            pending = self.db.get_pending_pzem_data(limit=self.batch_size)
+            pending = self.db.get_pending_sensor_data(
+                sensor_type=sensor_type,
+                limit=self.batch_size
+            )
 
             if not pending:
-                logger.debug("No pending PZEM data to upload")
+                logger.debug(f"No pending {sensor_type} data to upload")
                 return True
 
-            logger.info(f"Uploading {len(pending)} PZEM records...")
+            logger.info(f"Uploading {len(pending)} {sensor_type} records...")
 
             # Build payload
-            batch_id = f"pzem_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+            batch_id = f"{sensor_type}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
             payload = {
                 'source': 'raspberry_pi_weather_station',
-                'data_type': 'pzem',
+                'data_type': sensor_type,
                 'timestamp': datetime.utcnow().isoformat() + 'Z',
                 'batch_id': batch_id,
-                'device_count': len(set(r['device_id'] for r in pending)),
+                'device_count': len(set(r['sensor_id'] for r in pending)),
                 'records': pending
             }
 
@@ -136,12 +147,12 @@ class UploadService:
 
                 # Mark as uploaded
                 record_ids = [r['id'] for r in pending]
-                self.db.mark_pzem_uploaded(record_ids)
+                self.db.mark_sensor_data_uploaded(record_ids)
 
                 # Log success
                 self.db.log_upload(
                     batch_id=batch_id,
-                    data_type='pzem',
+                    data_type=sensor_type,
                     record_count=len(pending),
                     status='success',
                     http_status_code=response.status_code
@@ -156,7 +167,7 @@ class UploadService:
                 # Log failure
                 self.db.log_upload(
                     batch_id=batch_id,
-                    data_type='pzem',
+                    data_type=sensor_type,
                     record_count=len(pending),
                     status='failed',
                     http_status_code=response.status_code,
@@ -199,38 +210,55 @@ class UploadService:
             logger.error(f"Auto-cleanup error: {e}", exc_info=True)
 
     def upload_all_pending(self) -> None:
-        """Upload all pending data (PZEM, weather, battery)"""
+        """Upload all pending data (battery, weather, mqtt)"""
         logger.info("Starting upload cycle...")
 
         # Check pending counts
-        pzem_pending = self.db.get_pending_upload_count('pzem')
-        weather_pending = self.db.get_pending_upload_count('weather')
         battery_pending = self.db.get_pending_upload_count('battery')
+        weather_pending = self.db.get_pending_upload_count('weather')
+        mqtt_pending = self.db.get_pending_upload_count('mqtt')
 
         logger.info(
-            f"Pending: PZEM={pzem_pending}, "
-            f"Weather={weather_pending}, Battery={battery_pending}"
+            f"Pending: Battery={battery_pending}, "
+            f"Weather={weather_pending}, MQTT={mqtt_pending}"
         )
 
-        if pzem_pending == 0 and weather_pending == 0 and battery_pending == 0:
+        if battery_pending == 0 and weather_pending == 0 and mqtt_pending == 0:
             logger.info("No pending data to upload")
 
             # Still run cleanup even if no pending uploads
             self.run_auto_cleanup()
             return
 
-        # Upload PZEM data
+        # Upload data by type
         upload_success = False
-        if pzem_pending > 0:
-            success = self.upload_pzem_data()
+
+        # Battery data
+        if battery_pending > 0:
+            success = self.upload_sensor_data('battery')
             if success:
-                logger.info("PZEM data upload complete")
+                logger.info("Battery data upload complete")
                 upload_success = True
             else:
-                logger.warning("PZEM data upload failed, will retry")
+                logger.warning("Battery data upload failed, will retry")
 
-        # TODO: Upload weather data
-        # TODO: Upload battery data
+        # Weather data
+        if weather_pending > 0:
+            success = self.upload_sensor_data('weather')
+            if success:
+                logger.info("Weather data upload complete")
+                upload_success = True
+            else:
+                logger.warning("Weather data upload failed, will retry")
+
+        # MQTT data
+        if mqtt_pending > 0:
+            success = self.upload_sensor_data('mqtt')
+            if success:
+                logger.info("MQTT data upload complete")
+                upload_success = True
+            else:
+                logger.warning("MQTT data upload failed, will retry")
 
         logger.info("Upload cycle complete")
 
