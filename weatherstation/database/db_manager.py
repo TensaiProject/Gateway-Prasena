@@ -331,102 +331,7 @@ class DatabaseManager:
             return False
 
     # ============================================================================
-    # LEGACY: PZEM DATA (for backward compatibility)
-    # ============================================================================
-
-    def insert_pzem_data(self, device_id: str, reading) -> bool:
-        """
-        Insert PZEM reading data
-
-        Args:
-            device_id: Device ID
-            reading: PZEMReading object or dict from PZEM reader
-
-        Returns:
-            True if successful
-        """
-        try:
-            # Handle both dict and object input
-            if isinstance(reading, dict):
-                # Dict from pzem_pigpio_reader
-                modbus_address = reading.get('modbus_address', 1)
-                voltage = reading.get('voltage', 0)
-                current = reading.get('current', 0)
-                power = reading.get('power', 0)
-                energy = reading.get('energy', 0)  # kWh (no conversion)
-                frequency = reading.get('frequency', None)
-                power_factor = reading.get('power_factor', None)
-                read_quality = reading.get('read_quality', 100)
-                error_code = reading.get('error_code', 0)
-                timestamp = reading.get('timestamp', datetime.utcnow().isoformat() + 'Z')
-            else:
-                # Object (PZEMReading dataclass)
-                modbus_address = reading.modbus_address
-                voltage = reading.voltage
-                current = reading.current
-                power = reading.power
-                energy = reading.energy  # kWh (no conversion)
-                frequency = getattr(reading, 'frequency', None)
-                power_factor = getattr(reading, 'power_factor', None)
-                read_quality = getattr(reading, 'read_quality', 100)
-                error_code = getattr(reading, 'error_code', 0)
-                timestamp = getattr(reading, 'timestamp', datetime.utcnow().isoformat() + 'Z')
-
-            with self.get_connection() as conn:
-                conn.execute("""
-                    INSERT INTO pzem_data (
-                        device_id, modbus_address, voltage, current, power,
-                        energy, frequency, power_factor, read_quality,
-                        error_code, timestamp
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    device_id,
-                    modbus_address,
-                    voltage,
-                    current,
-                    power,
-                    energy,  # kWh
-                    frequency,  # NULL for PZEM-017 DC
-                    power_factor,  # NULL for PZEM-017 DC
-                    read_quality,
-                    error_code,
-                    timestamp
-                ))
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to insert PZEM data for {device_id}: {e}")
-            return False
-
-    def get_pending_pzem_data(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Get pending PZEM data for upload"""
-        with self.get_connection() as conn:
-            rows = conn.execute("""
-                SELECT * FROM pzem_data
-                WHERE uploaded = 0
-                ORDER BY timestamp ASC
-                LIMIT ?
-            """, (limit,)).fetchall()
-
-            return [dict(row) for row in rows]
-
-    def mark_pzem_uploaded(self, record_ids: List[int]) -> bool:
-        """Mark PZEM records as uploaded"""
-        try:
-            with self.get_connection() as conn:
-                placeholders = ','.join('?' * len(record_ids))
-                conn.execute(
-                    f"UPDATE pzem_data SET uploaded = 1 WHERE id IN ({placeholders})",
-                    record_ids
-                )
-            return True
-        except Exception as e:
-            logger.error(f"Failed to mark PZEM data as uploaded: {e}")
-            return False
-
-    # ============================================================================
-    # WEATHER DATA
+    # WEATHER DATA (Optional: structured table)
     # ============================================================================
 
     def insert_weather_data(self, device_id: str, data: Dict[str, Any]) -> bool:
@@ -463,13 +368,6 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to insert weather data: {e}")
             return False
-
-    # ============================================================================
-    # BATTERY MONITORING VIA PZEM
-    # ============================================================================
-    # Note: Battery data is stored in pzem_data table
-    # Battery monitoring uses PZEM-017 DC sensors
-    # Use insert_pzem_data() for battery measurements
 
     # ============================================================================
     # ERROR LOGGING
