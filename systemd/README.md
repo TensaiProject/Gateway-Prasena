@@ -185,14 +185,15 @@ TimeoutStopSec=60
 
 ### CPU Quota
 
-Default: 200% (2 cores)
-```ini
-CPUQuota=200%
-```
-
-Increase for faster processing:
+Default: 400% (all 4 cores on Pi Zero 2W)
 ```ini
 CPUQuota=400%
+```
+
+Reduce if system is overloaded:
+```ini
+CPUQuota=300%  # Use 3 cores
+CPUQuota=200%  # Use 2 cores
 ```
 
 ### Memory Limit

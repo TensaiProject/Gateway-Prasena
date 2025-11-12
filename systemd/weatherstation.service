@@ -22,9 +22,9 @@ Restart=always
 RestartSec=10
 StartLimitInterval=0
 
-# Resource limits (for Pi Zero 2W - 512MB RAM)
+# Resource limits (for Pi Zero 2W - 512MB RAM, 4 cores)
 MemoryLimit=384M
-CPUQuota=200%
+CPUQuota=400%  # Use all 4 cores for distributed load
 
 # Logging
 StandardOutput=journal
