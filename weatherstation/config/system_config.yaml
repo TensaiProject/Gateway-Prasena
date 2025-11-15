@@ -51,27 +51,19 @@ battery_sensors:
 weather_station:
   enabled: true
   http_port: 5001  # HTTP receiver port
-  endpoint: "/data"  # POST endpoint for weather data
+  protocol: "ecowitt"  # Ecowitt protocol (HTTP GET with query params)
 
-  # Dynamic field mapping: internal_name -> external_field_name
-  # Weather station sends data with external names, gateway maps to internal
-  field_mapping:
-    temperature: "temp"      # Internal: temperature, External: temp
-    humidity: "hum"          # Internal: humidity, External: hum
-    pressure: "press"        # Internal: pressure, External: press
-    wind_speed: "wind"       # Internal: wind_speed, External: wind
-    rainfall: "rain"         # Internal: rainfall, External: rain
-    # Add more mappings as needed when documentation arrives
+  # Sensor ID for this weather station (register in database first)
+  # If not set, will use stationtype from Ecowitt as sensor_id
+  sensor_id: "weather_ecowitt_01"
 
-  # Validation rules
-  validation:
-    required_fields: ["temp"]  # At minimum require temperature
-    value_ranges:
-      temp: [-40, 80]          # Temperature range in Celsius
-      hum: [0, 100]            # Humidity percentage
-      press: [800, 1200]       # Pressure in hPa
-      wind: [0, 200]           # Wind speed in km/h
-      rain: [0, 500]           # Rainfall in mm
+  # Ecowitt protocol details:
+  # - Method: GET
+  # - Path: /data/report/
+  # - Format: Query parameters (all fields are dynamic)
+  # - Common fields: tempf, humidity, baromrelin, windspeedmph, rainratein, etc.
+  # - Gateway auto-converts imperial to metric units
+  # - All fields are stored dynamically (no field mapping needed)
 
 upload:
   enabled: true
