@@ -194,51 +194,52 @@ class MQTTPublisher:
     def poll_and_publish(self):
         """
         Poll database for new sensor data and publish to MQTT
+        Uses optimized query to fetch only records after last published ID
         """
         try:
-            # Poll battery data
-            battery_data = self.db.get_pending_sensor_data(
+            # Poll battery data (optimized: only fetch records > last_published_id)
+            battery_data = self.db.get_pending_sensor_data_after_id(
                 sensor_type='battery',
+                after_id=self.last_published_id['battery'],
                 limit=10
             )
 
             for record in battery_data:
-                if record['id'] > self.last_published_id['battery']:
-                    topic = f"{self.base_topic}/battery/{record['sensor_id']}"
+                topic = f"{self.base_topic}/battery/{record['sensor_id']}"
 
-                    payload = {
-                        'sensor_id': record['sensor_id'],
-                        'sensor_type': 'battery',
-                        'data': record['data'],
-                        'timestamp': record['timestamp'],
-                        'read_quality': record['read_quality']
-                    }
+                payload = {
+                    'sensor_id': record['sensor_id'],
+                    'sensor_type': 'battery',
+                    'data': record['data'],
+                    'timestamp': record['timestamp'],
+                    'read_quality': record.get('read_quality', 100)
+                }
 
-                    if self.publish(topic, payload):
-                        self.last_published_id['battery'] = record['id']
-                        logger.info(f"Published battery data: {record['sensor_id']}")
+                if self.publish(topic, payload):
+                    self.last_published_id['battery'] = record['id']
+                    logger.info(f"Published battery data: {record['sensor_id']} (ID: {record['id']})")
 
-            # Poll weather data
-            weather_data = self.db.get_pending_sensor_data(
+            # Poll weather data (optimized: only fetch records > last_published_id)
+            weather_data = self.db.get_pending_sensor_data_after_id(
                 sensor_type='weather',
+                after_id=self.last_published_id['weather'],
                 limit=10
             )
 
             for record in weather_data:
-                if record['id'] > self.last_published_id['weather']:
-                    topic = f"{self.base_topic}/weather/{record['sensor_id']}"
+                topic = f"{self.base_topic}/weather/{record['sensor_id']}"
 
-                    payload = {
-                        'sensor_id': record['sensor_id'],
-                        'sensor_type': 'weather',
-                        'data': record['data'],
-                        'timestamp': record['timestamp'],
-                        'read_quality': record['read_quality']
-                    }
+                payload = {
+                    'sensor_id': record['sensor_id'],
+                    'sensor_type': 'weather',
+                    'data': record['data'],
+                    'timestamp': record['timestamp'],
+                    'read_quality': record.get('read_quality', 100)
+                }
 
-                    if self.publish(topic, payload):
-                        self.last_published_id['weather'] = record['id']
-                        logger.info(f"Published weather data: {record['sensor_id']}")
+                if self.publish(topic, payload):
+                    self.last_published_id['weather'] = record['id']
+                    logger.info(f"Published weather data: {record['sensor_id']} (ID: {record['id']})")
 
         except Exception as e:
             logger.error(f"Poll/publish error: {e}", exc_info=True)

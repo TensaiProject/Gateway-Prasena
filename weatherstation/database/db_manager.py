@@ -227,6 +227,9 @@ class DatabaseManager:
         """
         Register new device or update existing
 
+        For battery sensors: Prevents duplicate modbus_address on same bus.
+        If modbus_address already exists, updates the existing device with new sensor_id.
+
         Args:
             sensor_id: Unique sensor identifier (ULID/UUID)
             sensor_type: Type of sensor ('battery', 'weather')
@@ -245,6 +248,40 @@ class DatabaseManager:
             metadata = json.dumps(kwargs) if kwargs else None
 
             with self.get_connection() as conn:
+                # For battery sensors: prevent duplicate modbus_address
+                if sensor_type == 'battery' and modbus_address is not None:
+                    # Check if modbus_address already exists
+                    existing = conn.execute("""
+                        SELECT sensor_id, sensor_name FROM devices
+                        WHERE sensor_type = 'battery' AND modbus_address = ?
+                    """, (modbus_address,)).fetchone()
+
+                    if existing and existing['sensor_id'] != sensor_id:
+                        # Update existing device with new sensor_id (prevent duplicate)
+                        logger.warning(
+                            f"Modbus address {modbus_address} already exists "
+                            f"(sensor_id: {existing['sensor_id']}), updating with new sensor_id"
+                        )
+                        conn.execute("""
+                            UPDATE devices SET
+                                sensor_id = ?,
+                                sensor_name = COALESCE(?, sensor_name),
+                                sensor_model = COALESCE(?, sensor_model),
+                                location = COALESCE(?, location),
+                                description = COALESCE(?, description),
+                                metadata = COALESCE(?, metadata),
+                                enabled = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE sensor_type = 'battery' AND modbus_address = ?
+                        """, (
+                            sensor_id, sensor_name, sensor_model,
+                            location, description, metadata,
+                            1 if enabled else 0, modbus_address
+                        ))
+                        logger.info(f"Updated device at modbus_address {modbus_address} with sensor_id: {sensor_id}")
+                        return True
+
+                # Normal insert or replace
                 conn.execute("""
                     INSERT OR REPLACE INTO devices (
                         sensor_id, sensor_type, sensor_name, sensor_model,
@@ -451,6 +488,52 @@ class DatabaseManager:
                     LIMIT ?
                 """
                 rows = conn.execute(query, (limit,)).fetchall()
+
+            # Parse JSON data
+            results = []
+            for row in rows:
+                record = dict(row)
+                record['data'] = json.loads(record['data'])
+                results.append(record)
+
+            return results
+
+    def get_pending_sensor_data_after_id(
+        self,
+        sensor_type: str,
+        after_id: int = 0,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Get pending sensor data AFTER specific ID (for MQTT publisher optimization)
+        Prevents re-publishing same records by tracking last published ID
+
+        Args:
+            sensor_type: Filter by sensor type (required)
+            after_id: Get records with ID > this value (default: 0)
+            limit: Maximum records to return
+
+        Returns:
+            List of sensor data records with device info
+        """
+        with self.get_connection() as conn:
+            query = """
+                SELECT
+                    sd.id,
+                    d.sensor_id,
+                    d.sensor_type,
+                    sd.data,
+                    sd.read_quality,
+                    sd.timestamp
+                FROM sensor_data sd
+                JOIN devices d ON sd.device_id = d.id
+                WHERE sd.uploaded = 0
+                  AND d.sensor_type = ?
+                  AND sd.id > ?
+                ORDER BY sd.id ASC
+                LIMIT ?
+            """
+            rows = conn.execute(query, (sensor_type, after_id, limit)).fetchall()
 
             # Parse JSON data
             results = []
