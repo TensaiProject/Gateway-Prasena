@@ -118,11 +118,11 @@ class UploadService:
             logger.info(f"Uploading {len(pending)} {sensor_type} records...")
 
             # Build payload
-            batch_id = f"{sensor_type}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+            batch_id = f"{sensor_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             payload = {
                 'source': 'raspberry_pi_weather_station',
                 'data_type': sensor_type,
-                'timestamp': datetime.utcnow().isoformat() + 'Z',
+                'timestamp': datetime.now().isoformat(),
                 'batch_id': batch_id,
                 'device_count': len(set(r['sensor_id'] for r in pending)),
                 'records': pending

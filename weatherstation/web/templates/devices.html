@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+
+{% block title %}Devices - Weather Station Gateway{% endblock %}
+
+{% block content %}
+<div class="section">
+    <div class="section-header d-flex flex-between flex-center">
+        <div>
+            <h1 class="section-title" style="margin-bottom: 4px;">Device Management</h1>
+            <p class="section-description">Register and manage sensors</p>
+        </div>
+        <button class="btn btn-primary" id="register-new-btn">Register New Device</button>
+    </div>
+
+    <!-- Devices Grid -->
+    <div class="device-grid" id="devices-container">
+        <div style="grid-column: 1 / -1; text-center; padding: var(--space-xl);">
+            <span class="spinner spinner-lg"></span>
+            <p class="text-sm text-muted" style="margin-top: var(--space-md);">Loading devices...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Register Device Modal -->
+<div class="modal-overlay" id="register-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 class="modal-title">Register New Device</h2>
+            <button class="modal-close" id="register-modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="register-form">
+                <!-- Device Type -->
+                <div class="form-group">
+                    <label>Device Type</label>
+                    <div>
+                        <label style="display: inline-flex; align-items: center; margin-right: var(--space-lg);">
+                            <input type="radio" name="device-type" value="battery" checked>
+                            Battery Sensor (PZEM-017)
+                        </label>
+                        <label style="display: inline-flex; align-items: center;">
+                            <input type="radio" name="device-type" value="weather">
+                            Weather Station (Ecowitt)
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Device Name -->
+                <div class="form-group">
+                    <label for="device-name">Device Name (Optional)</label>
+                    <input type="text" id="device-name" placeholder="e.g., Main Battery Monitor">
+                    <span class="form-text">Leave empty for auto-generated name</span>
+                </div>
+
+                <!-- Modbus Address (Battery Only) -->
+                <div class="form-group" id="modbus-section">
+                    <label for="modbus-address">Modbus Address <span style="color: var(--color-danger);">*</span></label>
+                    <input type="number" id="modbus-address" min="1" max="247" placeholder="1-247" required>
+                    <span class="form-text">Modbus RTU address (1-247). Each battery sensor must have unique address.</span>
+                </div>
+
+                <!-- Scan Button -->
+                <div id="scan-section">
+                    <button type="button" class="btn btn-ghost" id="scan-btn">Scan for Available Sensors</button>
+                </div>
+
+                <!-- Scan Results -->
+                <div id="scan-results" class="hidden" style="margin-top: var(--space-md);">
+                    <div class="alert alert-info">
+                        <strong>Found Sensors:</strong>
+                        <div id="scan-results-list" style="margin-top: var(--space-sm);"></div>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-ghost" id="register-modal-cancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="register-btn">Register Device</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal-overlay" id="delete-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 class="modal-title">Confirm Delete</h2>
+            <button class="modal-close" id="delete-modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p>Are you sure you want to delete this device?</p>
+            <p class="text-sm text-muted">Device ID: <strong class="text-mono" id="delete-device-id"></strong></p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-ghost" id="delete-modal-cancel">Cancel</button>
+            <button type="button" class="btn btn-danger" id="confirm-delete-btn">Delete Device</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let devices = [];
+let deviceToDelete = null;
+
+// Modal controls
+const registerModal = document.getElementById('register-modal');
+const deleteModal = document.getElementById('delete-modal');
+
+document.getElementById('register-new-btn').addEventListener('click', () => {
+    registerModal.classList.add('active');
+});
+
+document.getElementById('register-modal-close').addEventListener('click', () => {
+    registerModal.classList.remove('active');
+});
+
+document.getElementById('register-modal-cancel').addEventListener('click', () => {
+    registerModal.classList.remove('active');
+});
+
+document.getElementById('delete-modal-close').addEventListener('click', () => {
+    deleteModal.classList.remove('active');
+});
+
+document.getElementById('delete-modal-cancel').addEventListener('click', () => {
+    deleteModal.classList.remove('active');
+});
+
+// Close modal on overlay click
+registerModal.addEventListener('click', (e) => {
+    if (e.target === registerModal) registerModal.classList.remove('active');
+});
+
+deleteModal.addEventListener('click', (e) => {
+    if (e.target === deleteModal) deleteModal.classList.remove('active');
+});
+
+// Load devices
+async function loadDevices() {
+    try {
+        const response = await fetch('/api/devices');
+        const result = await response.json();
+
+        if (result.success) {
+            devices = result.data;
+            renderDevices();
+        } else {
+            showNotification('Error loading devices: ' + result.error, 'danger');
+        }
+    } catch (error) {
+        console.error('Error loading devices:', error);
+        showNotification('Error loading devices', 'danger');
+    }
+}
+
+// Render devices
+function renderDevices() {
+    const container = document.getElementById('devices-container');
+
+    if (devices.length === 0) {
+        container.innerHTML = `
+            <div style="grid-column: 1 / -1; text-center; padding: var(--space-xl);">
+                <p class="text-muted">No devices registered yet</p>
+                <button class="btn btn-primary" style="margin-top: var(--space-md);" onclick="document.getElementById('register-new-btn').click()">
+                    Register Your First Device
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '';
+    devices.forEach(device => {
+        const isBattery = device.device_type === 'battery';
+        const badgeClass = isBattery ? 'badge-success' : 'badge-info';
+        const typeLabel = isBattery ? 'Battery' : 'Weather';
+
+        html += `
+            <div class="device-card">
+                <div class="device-card-header">
+                    <span>${device.device_name || typeLabel.toUpperCase()}</span>
+                    <span class="badge ${badgeClass}">${typeLabel}</span>
+                </div>
+                <div class="device-card-body">
+                    <dl>
+                        <dt>Device ID</dt>
+                        <dd class="text-xs">${device.device_id}</dd>
+                        ${isBattery ? `
+                            <dt>Modbus Address</dt>
+                            <dd>${device.modbus_address || 'N/A'}</dd>
+                        ` : ''}
+                        <dt>Registered</dt>
+                        <dd class="text-xs">${new Date(device.created_at).toLocaleString()}</dd>
+                    </dl>
+                </div>
+                <div class="device-card-footer">
+                    <button class="btn btn-sm btn-danger" onclick="confirmDelete('${device.device_id}')">Delete</button>
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+// Toggle modbus section based on device type
+document.querySelectorAll('input[name="device-type"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+        const isBattery = e.target.value === 'battery';
+        document.getElementById('modbus-section').style.display = isBattery ? 'block' : 'none';
+        document.getElementById('scan-section').style.display = isBattery ? 'block' : 'none';
+        document.getElementById('modbus-address').required = isBattery;
+    });
+});
+
+// Scan for modbus devices
+document.getElementById('scan-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('scan-btn');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Scanning...';
+
+    try {
+        const response = await fetch('/api/devices/scan');
+        const result = await response.json();
+
+        if (result.success) {
+            const devices = result.data;
+            const resultsDiv = document.getElementById('scan-results-list');
+
+            if (devices.length === 0) {
+                resultsDiv.innerHTML = '<p class="text-xs text-muted">No sensors found. Check connections.</p>';
+            } else {
+                let html = '<table class="table-config text-xs"><tbody>';
+                devices.forEach(device => {
+                    html += `
+                        <tr>
+                            <td class="cell-mono">Address ${device.address}</td>
+                            <td>${device.voltage.toFixed(2)}V, ${device.current.toFixed(2)}A, ${device.power.toFixed(2)}W</td>
+                            <td class="text-right">
+                                <button class="btn btn-sm btn-ghost" onclick="selectAddress(${device.address})">Use</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                html += '</tbody></table>';
+                resultsDiv.innerHTML = html;
+            }
+
+            document.getElementById('scan-results').classList.remove('hidden');
+        } else {
+            showNotification('Scan failed: ' + result.error, 'danger');
+        }
+    } catch (error) {
+        console.error('Error scanning:', error);
+        showNotification('Error scanning devices', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+});
+
+// Select address from scan results
+function selectAddress(address) {
+    document.getElementById('modbus-address').value = address;
+    showNotification(`Address ${address} selected`, 'info');
+}
+
+// Register device
+document.getElementById('register-btn').addEventListener('click', async () => {
+    const deviceType = document.querySelector('input[name="device-type"]:checked').value;
+    const deviceName = document.getElementById('device-name').value.trim();
+    const modbusAddress = deviceType === 'battery' ? parseInt(document.getElementById('modbus-address').value) : null;
+
+    // Validate
+    if (deviceType === 'battery' && (!modbusAddress || modbusAddress < 1 || modbusAddress > 247)) {
+        showNotification('Please enter valid modbus address (1-247)', 'danger');
+        return;
+    }
+
+    const deviceData = {
+        type: deviceType,
+        name: deviceName || null,
+        modbus_address: modbusAddress
+    };
+
+    const btn = document.getElementById('register-btn');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Registering...';
+
+    try {
+        const response = await fetch('/api/devices/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(deviceData)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showNotification('Device registered successfully!', 'success');
+            registerModal.classList.remove('active');
+            document.getElementById('register-form').reset();
+            document.getElementById('scan-results').classList.add('hidden');
+            loadDevices();
+        } else {
+            showNotification('Registration failed: ' + result.error, 'danger');
+        }
+    } catch (error) {
+        console.error('Error registering device:', error);
+        showNotification('Error registering device', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+});
+
+// Confirm delete
+function confirmDelete(deviceId) {
+    deviceToDelete = deviceId;
+    document.getElementById('delete-device-id').textContent = deviceId;
+    deleteModal.classList.add('active');
+}
+
+// Delete device
+document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
+    if (!deviceToDelete) return;
+
+    const btn = document.getElementById('confirm-delete-btn');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Deleting...';
+
+    try {
+        const response = await fetch(`/api/devices/${deviceToDelete}`, {
+            method: 'DELETE'
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showNotification('Device deleted successfully', 'success');
+            deleteModal.classList.remove('active');
+            loadDevices();
+        } else {
+            showNotification('Delete failed: ' + result.error, 'danger');
+        }
+    } catch (error) {
+        console.error('Error deleting device:', error);
+        showNotification('Error deleting device', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        deviceToDelete = null;
+    }
+});
+
+// Load devices on page load
+loadDevices();
+</script>
+{% endblock %}

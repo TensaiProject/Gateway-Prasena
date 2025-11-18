@@ -22,8 +22,43 @@ except ImportError:
 
 from weatherstation.database.db_manager import DatabaseManager
 from weatherstation.utils.logger import get_logger
+from weatherstation.sensors.error_codes import classify_battery_error, get_error_description
 
 logger = get_logger(__name__)
+
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def create_null_reading(error_message: str, error_code: int = 1) -> Dict[str, Any]:
+    """
+    Create null reading for failed sensor read
+
+    Args:
+        error_message: Description of error
+        error_code: Error classification
+            1 = Communication timeout
+            2 = CRC validation failed
+            3 = Device not responding
+            4 = General IO error
+
+    Returns:
+        Null reading with error metadata
+    """
+    return {
+        "voltage": None,
+        "current": None,
+        "power": None,
+        "energy": None,
+        "alarm_high_voltage": None,
+        "alarm_low_voltage": None,
+        "timestamp": datetime.now().isoformat(),
+        "error": True,
+        "error_code": error_code,
+        "error_message": error_message,
+        "error_description": get_error_description(error_code)
+    }
 
 
 # =============================================================================
@@ -106,7 +141,13 @@ class BatterySensor:
 
         # Setup RX
         self.pi.set_mode(self.rx_pin, pigpio.INPUT)
-        self.pi.bb_serial_read_close(self.rx_pin)
+
+        # Try to close any existing serial read (ignore if none exists)
+        try:
+            self.pi.bb_serial_read_close(self.rx_pin)
+        except:
+            pass  # No serial read was open, that's fine
+
         rc = self.pi.bb_serial_read_open(self.rx_pin, self.baudrate, 8)
         if rc != 0:
             raise RuntimeError(f"bb_serial_read_open failed (rc={rc})")
@@ -138,7 +179,7 @@ class BatterySensor:
     def _tx_bytes(self, payload: bytes):
         """Transmit bytes via software serial (8N2 format)"""
         self.pi.wave_clear()
-        self.pi.wave_add_serial(self.tx_pin, self.baudrate, payload, bbBits=8, bbStop=2)
+        self.pi.wave_add_serial(self.tx_pin, self.baudrate, payload, bb_bits=8, bb_stop=2)
         wid = self.pi.wave_create()
         if wid < 0:
             raise RuntimeError(f"wave_create failed (rc={wid})")
@@ -294,7 +335,7 @@ class BatterySensor:
             "energy": round(energy, 4),
             "alarm_high_voltage": alarm_high,
             "alarm_low_voltage": alarm_low,
-            "timestamp": datetime.utcnow().isoformat() + 'Z'
+            "timestamp": datetime.now().isoformat()
         }
 
     def close(self):
@@ -340,6 +381,7 @@ class AggregationBuffer:
     def aggregate(self) -> Optional[Dict[str, Any]]:
         """
         Aggregate buffered samples
+        Handles null values from failed sensor reads
 
         Returns:
             Aggregated data dictionary or None if no samples
@@ -347,28 +389,73 @@ class AggregationBuffer:
         if not self.samples:
             return None
 
-        # Collect values
-        voltages = [s['voltage'] for s in self.samples]
-        currents = [s['current'] for s in self.samples]
-        powers = [s['power'] for s in self.samples]
+        # Separate valid and error samples
+        valid_samples = [s for s in self.samples if not s.get('error', False)]
+        error_samples = [s for s in self.samples if s.get('error', False)]
 
-        # Last sample values
-        last = self.samples[-1]
+        total_samples = len(self.samples)
+        valid_count = len(valid_samples)
+        error_count = len(error_samples)
 
-        aggregated = {
-            "voltage_avg": round(sum(voltages) / len(voltages), 2),
-            "voltage_min": round(min(voltages), 2),
-            "voltage_max": round(max(voltages), 2),
-            "current_avg": round(sum(currents) / len(currents), 3),
-            "current_min": round(min(currents), 3),
-            "current_max": round(max(currents), 3),
-            "power_avg": round(sum(powers) / len(powers), 2),
-            "power_min": round(min(powers), 2),
-            "power_max": round(max(powers), 2),
-            "energy": last['energy'],  # Cumulative, use last value
-            "sample_count": len(self.samples),
-            "timestamp": datetime.utcnow().isoformat() + 'Z'
-        }
+        # Calculate read quality (percentage of successful reads)
+        read_quality = int((valid_count / total_samples) * 100) if total_samples > 0 else 0
+
+        # If ALL samples are errors, return null aggregated data
+        if valid_count == 0:
+            last_error = error_samples[-1] if error_samples else {}
+            aggregated = {
+                "voltage_avg": None,
+                "voltage_min": None,
+                "voltage_max": None,
+                "current_avg": None,
+                "current_min": None,
+                "current_max": None,
+                "power_avg": None,
+                "power_min": None,
+                "power_max": None,
+                "energy": None,
+                "sample_count": total_samples,
+                "valid_sample_count": 0,
+                "error_count": error_count,
+                "read_quality": 0,
+                "error_code": last_error.get('error_code', 4),
+                "error_message": last_error.get('error_message', 'All samples failed'),
+                "error_description": last_error.get('error_description', 'Unknown error'),
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            # Aggregate ONLY valid samples
+            voltages = [s['voltage'] for s in valid_samples if s['voltage'] is not None]
+            currents = [s['current'] for s in valid_samples if s['current'] is not None]
+            powers = [s['power'] for s in valid_samples if s['power'] is not None]
+
+            # Last valid sample for energy (cumulative)
+            last_valid = valid_samples[-1]
+
+            aggregated = {
+                "voltage_avg": round(sum(voltages) / len(voltages), 2) if voltages else None,
+                "voltage_min": round(min(voltages), 2) if voltages else None,
+                "voltage_max": round(max(voltages), 2) if voltages else None,
+                "current_avg": round(sum(currents) / len(currents), 3) if currents else None,
+                "current_min": round(min(currents), 3) if currents else None,
+                "current_max": round(max(currents), 3) if currents else None,
+                "power_avg": round(sum(powers) / len(powers), 2) if powers else None,
+                "power_min": round(min(powers), 2) if powers else None,
+                "power_max": round(max(powers), 2) if powers else None,
+                "energy": last_valid.get('energy'),  # Cumulative, use last value
+                "sample_count": total_samples,
+                "valid_sample_count": valid_count,
+                "error_count": error_count,
+                "read_quality": read_quality,
+                "timestamp": datetime.now().isoformat()
+            }
+
+            # Add error metadata if there were some errors
+            if error_count > 0:
+                last_error = error_samples[-1]
+                aggregated["last_error_code"] = last_error.get('error_code')
+                aggregated["last_error_message"] = last_error.get('error_message')
+                aggregated["last_error_description"] = last_error.get('error_description')
 
         # Clear buffer and reset timer
         self.samples.clear()
@@ -452,31 +539,61 @@ class BatteryReaderService:
             while self.running:
                 # Poll all sensors
                 for idx, sensor in enumerate(self.sensors):
+                    # Get device info OUTSIDE try block to ensure we can still log errors
+                    devices = self.db.get_enabled_devices('battery')
+                    if idx >= len(devices):
+                        continue
+
+                    device_internal_id = devices[idx]['id']
+                    sensor_id = devices[idx]['sensor_id']
+                    reading = None
+                    read_quality = 100
+                    error_code = 0
+
                     try:
+                        # Try to read sensor
                         reading = sensor.read_all()
-
-                        # Get device from database
-                        devices = self.db.get_enabled_devices('battery')
-                        if idx < len(devices):
-                            device_internal_id = devices[idx]['id']
-                            sensor_id = devices[idx]['sensor_id']
-
-                            # Add to aggregation buffer
-                            self.buffers[device_internal_id].add_sample(reading)
-
-                            # Check if should aggregate
-                            if self.buffers[device_internal_id].should_aggregate():
-                                aggregated = self.buffers[device_internal_id].aggregate()
-                                if aggregated:
-                                    # Store aggregated data to database
-                                    success = self.db.insert_sensor_data(sensor_id, aggregated)
-                                    if success:
-                                        logger.info(f"Stored aggregated data for {sensor_id}")
-                                    else:
-                                        logger.error(f"Failed to store data for {sensor_id}")
+                        read_quality = 100  # Success
+                        error_code = 0
 
                     except Exception as e:
-                        logger.error(f"Error reading sensor {idx}: {e}")
+                        # Classify error and create null reading
+                        error_code = classify_battery_error(e)
+                        error_description = get_error_description(error_code)
+
+                        logger.warning(
+                            f"Sensor {sensor_id} (idx={idx}) read failed: {error_description} - {e}"
+                        )
+
+                        # Create null reading with error metadata
+                        reading = create_null_reading(str(e), error_code)
+                        read_quality = 0
+
+                    # ALWAYS add to buffer (even if null/error)
+                    if reading:
+                        self.buffers[device_internal_id].add_sample(reading)
+
+                        # Check if should aggregate
+                        if self.buffers[device_internal_id].should_aggregate():
+                            aggregated = self.buffers[device_internal_id].aggregate()
+                            if aggregated:
+                                # Store aggregated data to database with quality metadata
+                                success = self.db.insert_sensor_data(
+                                    sensor_id=sensor_id,
+                                    data=aggregated,
+                                    read_quality=aggregated.get('read_quality', 100),
+                                    error_code=aggregated.get('error_code', 0)
+                                )
+                                if success:
+                                    quality = aggregated.get('read_quality', 100)
+                                    if quality == 100:
+                                        logger.info(f"Stored aggregated data for {sensor_id} (quality: {quality}%)")
+                                    elif quality > 0:
+                                        logger.warning(f"Stored degraded data for {sensor_id} (quality: {quality}%)")
+                                    else:
+                                        logger.error(f"Stored ERROR data for {sensor_id} (quality: 0%, all samples failed)")
+                                else:
+                                    logger.error(f"Failed to store data for {sensor_id}")
 
                 # Sleep
                 time.sleep(self.sampling_rate)
@@ -513,7 +630,7 @@ def main():
     parser.add_argument(
         '--test',
         action='store_true',
-        help='Test mode (single read)'
+        help='Test mode (read all registered sensors)'
     )
 
     args = parser.parse_args()
@@ -523,14 +640,105 @@ def main():
         config = yaml.safe_load(f)
 
     if args.test:
-        # Test single sensor
-        logger.info("Test mode: reading single sensor")
-        sensor = BatterySensor(modbus_address=1)
-        try:
-            reading = sensor.read_all()
-            print(json.dumps(reading, indent=2))
-        finally:
-            sensor.close()
+        # Test mode: read ALL registered battery sensors from database
+        logger.info("Test mode: reading all registered battery sensors")
+
+        # Get database path
+        db_path = config.get('database', {}).get('path', './data/weatherstation.db')
+        db = DatabaseManager(db_path)
+
+        # Get all enabled battery sensors
+        devices = db.get_enabled_devices(sensor_type='battery')
+        if not devices:
+            logger.error("No battery sensors registered in database")
+            print("ERROR: No battery sensors found. Please register a device first:")
+            print("  python3 -m weatherstation.main --register-device")
+            return 1
+
+        print("=" * 70)
+        print(f"BATTERY SENSOR TEST - Testing {len(devices)} sensor(s)")
+        print("=" * 70)
+        print()
+
+        # Test results tracking
+        results = []
+
+        # Test each sensor
+        for idx, device in enumerate(devices, 1):
+            sensor_id = device['sensor_id']
+            modbus_addr = device['modbus_address']
+            sensor_name = device.get('sensor_name', sensor_id)
+
+            print(f"[{idx}/{len(devices)}] Testing: {sensor_name} (ID: {sensor_id})")
+            print(f"        Modbus Address: {modbus_addr}")
+
+            logger.info(f"Testing sensor: {sensor_id} @ Modbus address {modbus_addr}")
+
+            sensor = None
+            try:
+                sensor = BatterySensor(modbus_address=modbus_addr)
+                reading = sensor.read_all()
+                reading['sensor_id'] = sensor_id
+
+                # Success
+                print(f"        Status: ✓ PASS")
+                print(f"        Data: V={reading['voltage']}V, I={reading['current']}A, P={reading['power']}W")
+                print()
+
+                results.append({
+                    'sensor_id': sensor_id,
+                    'sensor_name': sensor_name,
+                    'modbus_address': modbus_addr,
+                    'status': 'PASS',
+                    'data': reading
+                })
+
+            except Exception as e:
+                # Failure
+                print(f"        Status: ✗ FAIL")
+                print(f"        Error: {str(e)}")
+                print()
+
+                logger.error(f"Failed to read sensor {sensor_id}: {e}")
+
+                results.append({
+                    'sensor_id': sensor_id,
+                    'sensor_name': sensor_name,
+                    'modbus_address': modbus_addr,
+                    'status': 'FAIL',
+                    'error': str(e)
+                })
+
+            finally:
+                if sensor:
+                    sensor.close()
+
+        # Print summary
+        print("=" * 70)
+        print("TEST SUMMARY")
+        print("=" * 70)
+
+        passed = sum(1 for r in results if r['status'] == 'PASS')
+        failed = sum(1 for r in results if r['status'] == 'FAIL')
+
+        print(f"Total sensors: {len(results)}")
+        print(f"Passed: {passed}")
+        print(f"Failed: {failed}")
+        print()
+
+        if failed > 0:
+            print("Failed sensors:")
+            for r in results:
+                if r['status'] == 'FAIL':
+                    print(f"  - {r['sensor_name']} (addr {r['modbus_address']}): {r['error']}")
+            print()
+
+        print("Detailed results (JSON):")
+        print(json.dumps(results, indent=2))
+        print()
+
+        # Return exit code based on results
+        return 0 if failed == 0 else 1
     else:
         # Run service
         service = BatteryReaderService(config)

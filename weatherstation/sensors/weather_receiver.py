@@ -81,7 +81,7 @@ class WeatherDataParser:
                     parsed[key] = value
 
             # Add metadata
-            parsed['received_at'] = datetime.utcnow().isoformat() + 'Z'
+            parsed['received_at'] = datetime.now().isoformat()
 
             return parsed
 
@@ -96,36 +96,51 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'service': 'weather_receiver',
-        'timestamp': datetime.utcnow().isoformat() + 'Z'
+        'timestamp': datetime.now().isoformat()
     })
 
 
-@app.route('/data/report/', methods=['GET'])
+@app.route('/data/report/', methods=['GET', 'POST'])
 def receive_ecowitt_data():
     """
-    Receive Ecowitt weather station data via HTTP GET
+    Receive Ecowitt weather station data via HTTP GET or POST
 
-    Ecowitt protocol sends data as URL query parameters:
+    Ecowitt protocol sends data as URL query parameters (GET) or form data (POST):
     GET /data/report/?PASSKEY=XXX&stationtype=EasyWeatherV1.6.4&dateutc=2025-11-15+11:30:45&tempf=77.5&humidity=65&...
+    POST /data/report/ with form data
 
     All fields are dynamic and optional (except stationtype and dateutc)
     """
     global config, db_manager
 
     try:
-        # Get all query parameters as dict
-        raw_data = request.args.to_dict()
+        # Get data from query parameters (GET) or form data (POST)
+        if request.method == 'GET':
+            raw_data = request.args.to_dict()
+        else:  # POST
+            raw_data = request.form.to_dict()
+            # If no form data, try JSON body
+            if not raw_data:
+                raw_data = request.get_json(silent=True) or {}
 
         if not raw_data:
             return jsonify({'error': 'No data received'}), 400
 
         logger.debug(f"Received Ecowitt data: {raw_data}")
 
-        # Get weather station config
-        weather_config = config.get('weather_station', {})
+        # Get sensor_id from database (registered weather devices)
+        # This is consistent with battery_reader which also gets sensors from database
+        weather_devices = db_manager.get_enabled_devices('weather')
 
-        # Get sensor_id from config or use stationtype as fallback
-        sensor_id = weather_config.get('sensor_id', raw_data.get('stationtype', 'weather_station_default'))
+        if not weather_devices:
+            logger.error("No weather station registered in database. Please register a weather device first.")
+            return jsonify({'error': 'No weather station registered'}), 500
+
+        # Use first registered weather station
+        # (future: could match by PASSKEY or stationtype if multiple stations)
+        sensor_id = weather_devices[0]['sensor_id']
+
+        logger.debug(f"Using registered weather sensor: {sensor_id}")
 
         # Parse all fields (fully dynamic - accept everything Ecowitt sends)
         parsed_data = {}
@@ -203,8 +218,8 @@ def receive_ecowitt_data():
 
         # Add metadata
         parsed_data['stationtype'] = raw_data.get('stationtype', 'unknown')
-        parsed_data['dateutc'] = raw_data.get('dateutc', datetime.utcnow().isoformat() + 'Z')
-        parsed_data['received_at'] = datetime.utcnow().isoformat() + 'Z'
+        parsed_data['dateutc'] = raw_data.get('dateutc', datetime.now().isoformat())
+        parsed_data['received_at'] = datetime.now().isoformat()
 
         # Store to database
         success = db_manager.insert_sensor_data(sensor_id, parsed_data)
@@ -270,10 +285,22 @@ def main():
 
     port = args.port or weather_config.get('http_port', 5001)
 
+    # Check registered weather stations
+    weather_devices = db_manager.get_enabled_devices('weather')
+
     logger.info("=" * 60)
     logger.info("Weather Station HTTP Receiver starting...")
     logger.info(f"Listening on {args.host}:{port}")
-    logger.info(f"Endpoint: POST /data")
+    logger.info(f"Endpoint: POST /data/report/")
+
+    if weather_devices:
+        logger.info(f"Registered weather stations: {len(weather_devices)}")
+        for device in weather_devices:
+            logger.info(f"  - {device['sensor_id']} ({device.get('name', 'Unknown')})")
+    else:
+        logger.warning("No weather stations registered in database!")
+        logger.warning("Please register a weather device via web admin or CLI")
+
     logger.info("=" * 60)
 
     try:

@@ -72,6 +72,25 @@ def run_mqtt_service(config_path: str):
     mqtt_main()
 
 
+def run_web_service(config_path: str):
+    """Run web admin service"""
+    from weatherstation.services.web_admin import WebAdminService
+    from weatherstation.utils.logger import setup_logging
+
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+
+    log_config = config.get('logging', {})
+    setup_logging(
+        log_level=log_config.get('level', 'INFO'),
+        log_file='./logs/web_admin.log'
+    )
+
+    db_path = config.get('database', {}).get('path', './data/weatherstation.db')
+    service = WebAdminService(config, db_path)
+    service.run()
+
+
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
@@ -84,16 +103,23 @@ Examples:
   %(prog)s --service weather        # Run weather station receiver
   %(prog)s --service mqtt           # Run MQTT publisher
   %(prog)s --service api            # Run web API server
+  %(prog)s --service web            # Run web admin (always-on mode, port 8080)
   %(prog)s --service cleanup        # Run data cleanup service
-  %(prog)s --service all            # Run all services (testing only)
+  %(prog)s --service all            # Run core services only (battery, weather, mqtt, upload)
+                                    # Web admin excluded - use systemd socket activation instead
   %(prog)s --init-db                # Initialize database
   %(prog)s --register-device        # Register new device (interactive)
+
+Notes:
+  - For on-demand web admin (recommended):
+    sudo systemctl enable --now web-admin.socket
+  - Web admin auto-shuts down after 60s idle (saves resources)
         """
     )
 
     parser.add_argument(
         '--service',
-        choices=['battery', 'upload', 'weather', 'mqtt', 'api', 'cleanup', 'all'],
+        choices=['battery', 'upload', 'weather', 'mqtt', 'api', 'web', 'cleanup', 'all'],
         help='Service to run'
     )
     parser.add_argument(
@@ -160,23 +186,38 @@ def register_device_interactive():
     print("Device Registration")
     print("=" * 60 + "\n")
 
-    device_type = input("Device type (pzem/weather_station/battery): ").strip()
-    device_id = input("Device ID (e.g., pzem_01): ").strip()
+    device_type = input("Device type (battery/weather): ").strip().lower()
+
+    # Normalize legacy/alias types
+    if device_type in ['pzem', 'pzem-017', 'pzem017']:
+        print("  → Normalizing 'pzem' to 'battery'")
+        device_type = 'battery'
+    elif device_type in ['weather_station', 'ecowitt']:
+        print("  → Normalizing to 'weather'")
+        device_type = 'weather'
+
+    # Validate type
+    if device_type not in ['battery', 'weather']:
+        print(f"\n✗ Invalid device type: '{device_type}'")
+        print("  Valid types: battery, weather")
+        return 1
+
+    device_id = input("Device ID (e.g., 01K9RSSBEVE5X1CV7ZGTB46MZP): ").strip()
     device_name = input("Device name: ").strip()
-    location = input("Location: ").strip()
+    location = input("Location (optional): ").strip()
 
     # Type-specific fields
     modbus_address = None
-    if device_type == 'pzem':
+    if device_type == 'battery':
         modbus_address = int(input("Modbus address (1-247): "))
 
     try:
         db = DatabaseManager('./data/weatherstation.db')
         db.register_device(
-            device_id=device_id,
-            device_type=device_type,
-            device_name=device_name,
-            location=location,
+            sensor_id=device_id,
+            sensor_type=device_type,
+            sensor_name=device_name,
+            location=location if location else None,
             modbus_address=modbus_address,
             enabled=True
         )
@@ -230,6 +271,18 @@ def run_service(service: str, config: str, test_mode: bool = False):
         sys.argv = ['api_server', '--config', config]
         return api_main()
 
+    elif service == 'web':
+        from weatherstation.services.web_admin import WebAdminService
+        import yaml
+
+        with open(config, 'r') as f:
+            cfg = yaml.safe_load(f)
+
+        db_path = cfg.get('database', {}).get('path', './data/weatherstation.db')
+        service = WebAdminService(cfg, db_path)
+        service.run()
+        return 0
+
     elif service == 'all':
         from weatherstation.service_manager import ServiceManager
 
@@ -237,11 +290,23 @@ def run_service(service: str, config: str, test_mode: bool = False):
         logger.info("Starting Weather Station Gateway (Production Mode)")
         logger.info("Multi-threaded single-process execution")
         logger.info("=" * 60)
+        logger.info("")
+        logger.info("Core services (always running):")
+        logger.info("  - Battery Sensor Reader")
+        logger.info("  - Weather Station Receiver")
+        logger.info("  - MQTT Publisher")
+        logger.info("  - Upload Service")
+        logger.info("")
+        logger.info("Web Admin (on-demand via socket activation):")
+        logger.info("  Enable: sudo systemctl enable --now web-admin.socket")
+        logger.info("  Access: http://gateway-ip:8080")
+        logger.info("=" * 60)
 
         # Create service manager
         manager = ServiceManager()
 
-        # Register all services
+        # Register core services only
+        # Web admin excluded - should use systemd socket activation for on-demand startup
         manager.register_service(
             name='battery',
             target=run_battery_service,
@@ -270,7 +335,7 @@ def run_service(service: str, config: str, test_mode: bool = False):
             auto_restart=True
         )
 
-        # Run all services
+        # Run all core services
         try:
             manager.run()
         except Exception as e:

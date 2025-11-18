@@ -1,0 +1,10 @@
+[Unit]
+Description=Weather Station Web Admin Socket
+PartOf=weatherstation.service
+
+[Socket]
+# Listen on port 8080 (IPv4 only)
+ListenStream=0.0.0.0:8080
+
+[Install]
+WantedBy=sockets.target

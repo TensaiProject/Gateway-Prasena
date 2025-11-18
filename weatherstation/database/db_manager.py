@@ -304,7 +304,7 @@ class DatabaseManager:
         """Get device by ID"""
         with self.get_connection() as conn:
             row = conn.execute(
-                "SELECT * FROM devices WHERE device_id = ?",
+                "SELECT * FROM devices WHERE sensor_id = ?",
                 (device_id,)
             ).fetchone()
 
@@ -372,7 +372,7 @@ class DatabaseManager:
                 return True
 
             params.append(device_id)
-            query = f"UPDATE devices SET {', '.join(updates)} WHERE device_id = ?"
+            query = f"UPDATE devices SET {', '.join(updates)} WHERE sensor_id = ?"
 
             with self.get_connection() as conn:
                 conn.execute(query, params)
@@ -381,6 +381,58 @@ class DatabaseManager:
 
         except Exception as e:
             logger.error(f"Failed to update device status {device_id}: {e}")
+            return False
+
+    def get_all_devices(self, sensor_type: str = None) -> List[Dict[str, Any]]:
+        """
+        Get all devices (enabled and disabled)
+
+        Args:
+            sensor_type: Filter by sensor type (optional)
+
+        Returns:
+            List of device dictionaries
+        """
+        with self.get_connection() as conn:
+            if sensor_type:
+                rows = conn.execute(
+                    "SELECT * FROM devices WHERE sensor_type = ?",
+                    (sensor_type,)
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM devices").fetchall()
+
+            return [dict(row) for row in rows]
+
+    def get_device_by_id(self, device_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get device by ID (alias for get_device for consistency)
+
+        Args:
+            device_id: Device ID
+
+        Returns:
+            Device dictionary or None
+        """
+        return self.get_device(device_id)
+
+    def delete_device(self, device_id: str) -> bool:
+        """
+        Delete device from database
+
+        Args:
+            device_id: Device ID to delete
+
+        Returns:
+            True if successful
+        """
+        try:
+            with self.get_connection() as conn:
+                conn.execute("DELETE FROM devices WHERE sensor_id = ?", (device_id,))
+            logger.info(f"Deleted device: {device_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete device {device_id}: {e}")
             return False
 
     # ============================================================================
@@ -421,7 +473,7 @@ class DatabaseManager:
                 device_id = row['id']
 
                 # Insert sensor data
-                timestamp = data.pop('timestamp', datetime.utcnow().isoformat() + 'Z')
+                timestamp = data.pop('timestamp', datetime.now().isoformat())
                 data_json = json.dumps(data)
 
                 conn.execute("""
@@ -579,7 +631,7 @@ class DatabaseManager:
                 placeholders = ','.join('?' * len(record_ids))
                 conn.execute(
                     f"UPDATE sensor_data SET uploaded = 1, uploaded_at = ? WHERE id IN ({placeholders})",
-                    [datetime.utcnow().isoformat() + 'Z'] + record_ids
+                    [datetime.now().isoformat()] + record_ids
                 )
             return True
         except Exception as e:
@@ -618,7 +670,7 @@ class DatabaseManager:
                     data.get('uv_index'),
                     data.get('light_intensity'),
                     json.dumps(data.get('extra_data', {})),
-                    data.get('timestamp', datetime.utcnow().isoformat() + 'Z')
+                    data.get('timestamp', datetime.now().isoformat())
                 ))
             return True
         except Exception as e:
@@ -747,16 +799,16 @@ class DatabaseManager:
     def get_pending_upload_count(self, data_type: str = None) -> int:
         """Get count of pending uploads"""
         with self.get_connection() as conn:
-            if data_type == 'pzem':
-                row = conn.execute(
-                    "SELECT COUNT(*) as count FROM pzem_data WHERE uploaded = 0"
-                ).fetchone()
-            elif data_type == 'weather':
-                row = conn.execute(
-                    "SELECT COUNT(*) as count FROM weather_data WHERE uploaded = 0"
-                ).fetchone()
+            if data_type:
+                # Count pending data for specific sensor type using new universal schema
+                row = conn.execute("""
+                    SELECT COUNT(*) as count
+                    FROM sensor_data sd
+                    JOIN devices d ON sd.device_id = d.id
+                    WHERE sd.uploaded = 0 AND d.sensor_type = ?
+                """, (data_type,)).fetchone()
             else:
-                # Total - use sensor_data table
+                # Total - all sensor types
                 row = conn.execute("""
                     SELECT COUNT(*) as count FROM sensor_data WHERE uploaded = 0
                 """).fetchone()

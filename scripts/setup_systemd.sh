@@ -34,7 +34,7 @@ cat > /etc/systemd/system/weatherstation.service <<EOF
 [Unit]
 Description=Weather Station Gateway (All Services)
 Documentation=https://github.com/TensaiProject/Gateway-Prasena
-After=network.target pigpiod.service
+After=network-online.target pigpiod.service
 Requires=pigpiod.service
 
 [Service]
@@ -44,7 +44,7 @@ Group=$ACTUAL_USER
 WorkingDirectory=$INSTALL_DIR
 
 # Environment
-Environment="PATH=$INSTALL_DIR/venv/bin"
+Environment="PATH=$INSTALL_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 
 # Run all services in single process (multi-threaded)
@@ -93,7 +93,7 @@ Type=oneshot
 User=$ACTUAL_USER
 Group=$ACTUAL_USER
 WorkingDirectory=$INSTALL_DIR
-Environment="PATH=$INSTALL_DIR/venv/bin"
+Environment="PATH=$INSTALL_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
 ExecStart=$INSTALL_DIR/venv/bin/python3 -m weatherstation.main --service cleanup --config $INSTALL_DIR/weatherstation/config/system_config.yaml
 
 # Logging

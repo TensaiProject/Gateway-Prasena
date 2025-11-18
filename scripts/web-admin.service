@@ -1,0 +1,38 @@
+[Unit]
+Description=Weather Station Web Admin (On-Demand)
+After=network.target
+Requires=web-admin.socket
+
+[Service]
+Type=notify
+User=weatherstation1
+Group=weatherstation1
+WorkingDirectory=/home/weatherstation1/Gateway-Prasena
+
+# Use systemd socket activation (passed via LISTEN_FDS)
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/bin/python3 -m weatherstation.main --service web
+
+# Auto-restart on failure
+Restart=on-failure
+RestartSec=10
+
+# Resource limits (keep it lightweight)
+MemoryMax=50M
+CPUQuota=20%
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/weatherstation1/Gateway-Prasena/data
+ReadWritePaths=/home/weatherstation1/Gateway-Prasena/logs
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=web-admin
+
+[Install]
+WantedBy=multi-user.target

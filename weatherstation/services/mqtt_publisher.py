@@ -8,6 +8,7 @@ import time
 import json
 import argparse
 import yaml
+import socket
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -56,13 +57,28 @@ class MQTTPublisher:
         self.keepalive = mqtt_config.get('keepalive', 60)
         self.reconnect_delay = mqtt_config.get('reconnect_delay', 5)
 
+        # Client ID (configurable or auto-generated from hostname)
+        self.client_id = mqtt_config.get('client_id')  # Optional from config
+
         # Topics
         self.topics = mqtt_config.get('topics', {})
         self.base_topic = self.topics.get('sensor_data', 'prasena/sensors')
 
-        # Polling config
-        self.poll_interval = 5  # Poll database every 5 seconds
+        # Polling config (read from config file)
+        publisher_config = mqtt_config.get('publisher', {})
+        self.poll_interval = publisher_config.get('poll_interval', 5)  # Default: 5 seconds
+        self.batch_size = publisher_config.get('batch_size', 10)  # Default: 10 records
         self.last_published_id = {'battery': 0, 'weather': 0}
+
+        # Cleanup configuration
+        db_config = config.get('database', {})
+        self.auto_cleanup_enabled = db_config.get('auto_cleanup_enabled', True)
+        self.auto_cleanup_days = db_config.get('auto_cleanup_days', 1)
+        self.cleanup_counter = 0
+        self.cleanup_interval = 720  # Run cleanup every 720 cycles (~1 hour if poll=5s)
+
+        logger.info(f"Poll interval: {self.poll_interval}s, Batch size: {self.batch_size}")
+        logger.info(f"Auto-cleanup: {'enabled' if self.auto_cleanup_enabled else 'disabled'} (data older than {self.auto_cleanup_days} days)")
 
         logger.info("MQTT Publisher initialized")
         logger.info(f"Broker: {self.protocol}://{self.broker_host}:{self.broker_port}")
@@ -104,8 +120,17 @@ class MQTTPublisher:
             True if successful, False otherwise
         """
         try:
-            # Create client
-            client_id = f"gateway_{int(time.time())}"
+            # Create client ID
+            # Priority: 1. Config, 2. Hostname, 3. Timestamp
+            if self.client_id:
+                # Use client_id from config
+                client_id = self.client_id
+            else:
+                # Auto-generate from hostname (unique per device)
+                hostname = socket.gethostname()
+                client_id = f"gateway_{hostname}"
+
+            logger.info(f"Using MQTT client ID: {client_id}")
 
             if self.protocol == 'wss':
                 # WebSocket Secure
@@ -201,48 +226,139 @@ class MQTTPublisher:
             battery_data = self.db.get_pending_sensor_data_after_id(
                 sensor_type='battery',
                 after_id=self.last_published_id['battery'],
-                limit=10
+                limit=self.batch_size
             )
 
+            # Log pending count for monitoring
+            if battery_data:
+                logger.info(f"Pending battery data: {len(battery_data)} records (last_id: {self.last_published_id['battery']})")
+
+            # Track published IDs for batch marking
+            published_battery_ids = []
+
             for record in battery_data:
-                topic = f"{self.base_topic}/battery/{record['sensor_id']}"
+                topic = f"{self.base_topic}/{record['sensor_id']}"
+
+                read_quality = record.get('read_quality', 100)
+                error_code = record.get('error_code', 0)
 
                 payload = {
                     'sensor_id': record['sensor_id'],
                     'sensor_type': 'battery',
                     'data': record['data'],
                     'timestamp': record['timestamp'],
-                    'read_quality': record.get('read_quality', 100)
+                    'read_quality': read_quality,
+                    'error_code': error_code,
+                    'status': 'online' if read_quality > 0 else 'offline'
                 }
+
+                # Add error details if present
+                if error_code > 0 and isinstance(record.get('data'), dict):
+                    data = record['data']
+                    if 'error_message' in data:
+                        payload['error_message'] = data['error_message']
+                    if 'error_description' in data:
+                        payload['error_description'] = data['error_description']
+                    payload['error'] = True
 
                 if self.publish(topic, payload):
                     self.last_published_id['battery'] = record['id']
-                    logger.info(f"Published battery data: {record['sensor_id']} (ID: {record['id']})")
+                    published_battery_ids.append(record['id'])
+
+                    # Different log levels based on quality
+                    if read_quality == 100:
+                        logger.info(f"Published battery data: {record['sensor_id']} (ID: {record['id']}, quality: 100%)")
+                    elif read_quality > 0:
+                        logger.warning(f"Published degraded battery data: {record['sensor_id']} (ID: {record['id']}, quality: {read_quality}%)")
+                    else:
+                        logger.error(f"Published ERROR battery data: {record['sensor_id']} (ID: {record['id']}, quality: 0%, OFFLINE)")
+
+            # Mark published records as uploaded (for auto-cleanup)
+            if published_battery_ids:
+                self.db.mark_sensor_data_uploaded(published_battery_ids)
+                logger.debug(f"Marked {len(published_battery_ids)} battery records as published")
 
             # Poll weather data (optimized: only fetch records > last_published_id)
             weather_data = self.db.get_pending_sensor_data_after_id(
                 sensor_type='weather',
                 after_id=self.last_published_id['weather'],
-                limit=10
+                limit=self.batch_size
             )
 
+            # Log pending count for monitoring
+            if weather_data:
+                logger.info(f"Pending weather data: {len(weather_data)} records (last_id: {self.last_published_id['weather']})")
+
+            # Track published IDs for batch marking
+            published_weather_ids = []
+
             for record in weather_data:
-                topic = f"{self.base_topic}/weather/{record['sensor_id']}"
+                topic = f"{self.base_topic}/{record['sensor_id']}"
+
+                read_quality = record.get('read_quality', 100)
+                error_code = record.get('error_code', 0)
 
                 payload = {
                     'sensor_id': record['sensor_id'],
                     'sensor_type': 'weather',
                     'data': record['data'],
                     'timestamp': record['timestamp'],
-                    'read_quality': record.get('read_quality', 100)
+                    'read_quality': read_quality,
+                    'error_code': error_code,
+                    'status': 'online' if read_quality > 0 else 'offline'
                 }
+
+                # Add error details if present
+                if error_code > 0 and isinstance(record.get('data'), dict):
+                    data = record['data']
+                    if 'error_message' in data:
+                        payload['error_message'] = data['error_message']
+                    if 'error_description' in data:
+                        payload['error_description'] = data['error_description']
+                    payload['error'] = True
 
                 if self.publish(topic, payload):
                     self.last_published_id['weather'] = record['id']
-                    logger.info(f"Published weather data: {record['sensor_id']} (ID: {record['id']})")
+                    published_weather_ids.append(record['id'])
+
+                    # Different log levels based on quality
+                    if read_quality == 100:
+                        logger.info(f"Published weather data: {record['sensor_id']} (ID: {record['id']}, quality: 100%)")
+                    elif read_quality > 0:
+                        logger.warning(f"Published degraded weather data: {record['sensor_id']} (ID: {record['id']}, quality: {read_quality}%)")
+                    else:
+                        logger.error(f"Published ERROR weather data: {record['sensor_id']} (ID: {record['id']}, quality: 0%, OFFLINE)")
+
+            # Mark published records as uploaded (for auto-cleanup)
+            if published_weather_ids:
+                self.db.mark_sensor_data_uploaded(published_weather_ids)
+                logger.debug(f"Marked {len(published_weather_ids)} weather records as published")
 
         except Exception as e:
             logger.error(f"Poll/publish error: {e}", exc_info=True)
+
+    def run_auto_cleanup(self) -> None:
+        """Run automatic cleanup of old published data"""
+        if not self.auto_cleanup_enabled:
+            return
+
+        try:
+            logger.info(f"Running auto-cleanup (data older than {self.auto_cleanup_days} days)...")
+
+            results = self.db.cleanup_all_uploaded_data(
+                days_old=self.auto_cleanup_days,
+                dry_run=False
+            )
+
+            total_deleted = results.get('total_records_deleted', 0)
+
+            if total_deleted > 0:
+                logger.info(f"Auto-cleanup: deleted {total_deleted} published records")
+            else:
+                logger.debug("Auto-cleanup: no old records to delete")
+
+        except Exception as e:
+            logger.error(f"Auto-cleanup error: {e}", exc_info=True)
 
     def run(self):
         """Main service loop"""
@@ -259,10 +375,17 @@ class MQTTPublisher:
 
         try:
             while self.running:
-                if self.connected:
-                    self.poll_and_publish()
-                else:
-                    # Try to reconnect
+                # Always poll and publish (track pending data even when offline)
+                self.poll_and_publish()
+
+                # Run cleanup periodically (every cleanup_interval cycles)
+                self.cleanup_counter += 1
+                if self.cleanup_counter >= self.cleanup_interval:
+                    self.run_auto_cleanup()
+                    self.cleanup_counter = 0
+
+                # Reconnect if disconnected
+                if not self.connected:
                     logger.warning("Not connected, attempting reconnect...")
                     self.connect_mqtt()
 

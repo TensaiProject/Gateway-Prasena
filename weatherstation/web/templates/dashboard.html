@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Weather Station Gateway{% endblock %}
+
+{% block content %}
+<div class="section">
+    <div class="section-header">
+        <h1 class="section-title">System Dashboard</h1>
+        <p class="section-description">Gateway administration and monitoring</p>
+    </div>
+
+    <!-- Quick Access Panels -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-lg); margin-bottom: var(--space-xl);">
+        <!-- Settings Panel -->
+        <a href="/settings" style="text-decoration: none; color: inherit;">
+            <div class="panel" style="cursor: pointer;">
+                <div class="panel-header">System Settings</div>
+                <div class="panel-body">
+                    <p class="text-sm text-muted">Configure intervals for battery sensors, MQTT publisher, and cloud upload services</p>
+                </div>
+            </div>
+        </a>
+
+        <!-- Devices Panel -->
+        <a href="/devices" style="text-decoration: none; color: inherit;">
+            <div class="panel" style="cursor: pointer;">
+                <div class="panel-header">Device Management</div>
+                <div class="panel-body">
+                    <p class="text-sm text-muted">Register and manage battery sensors and weather stations</p>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <!-- System Information -->
+    <div class="panel">
+        <div class="panel-header">System Information</div>
+        <div class="panel-body">
+            <table class="table-config">
+                <tbody>
+                    <tr>
+                        <td style="width: 200px; font-weight: 500;">Gateway Status</td>
+                        <td><span class="badge badge-success">Running</span></td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: 500;">Configuration File</td>
+                        <td class="cell-mono">/weatherstation/config/system_config.yaml</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: 500;">Database Location</td>
+                        <td class="cell-mono">./data/weatherstation.db</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: 500;">Web Admin Port</td>
+                        <td class="cell-mono">8080</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Service Status -->
+    <div class="panel">
+        <div class="panel-header">Core Services</div>
+        <div class="panel-body">
+            <table class="table-config">
+                <thead>
+                    <tr>
+                        <th>Service</th>
+                        <th>Description</th>
+                        <th class="cell-center">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="cell-mono">battery-reader</td>
+                        <td class="text-sm">Reads PZEM-017 sensors via Modbus RTU</td>
+                        <td class="cell-center"><span class="badge badge-success">Active</span></td>
+                    </tr>
+                    <tr>
+                        <td class="cell-mono">weather-receiver</td>
+                        <td class="text-sm">Receives Ecowitt weather station data</td>
+                        <td class="cell-center"><span class="badge badge-success">Active</span></td>
+                    </tr>
+                    <tr>
+                        <td class="cell-mono">mqtt-publisher</td>
+                        <td class="text-sm">Publishes sensor data to MQTT broker</td>
+                        <td class="cell-center"><span class="badge badge-success">Active</span></td>
+                    </tr>
+                    <tr>
+                        <td class="cell-mono">upload-service</td>
+                        <td class="text-sm">Uploads data to cloud server (optional)</td>
+                        <td class="cell-center"><span class="badge badge-muted">Inactive</span></td>
+                    </tr>
+                    <tr>
+                        <td class="cell-mono">web-admin</td>
+                        <td class="text-sm">Web interface (on-demand via socket)</td>
+                        <td class="cell-center"><span class="badge badge-success">Running</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Important Notes -->
+    <div class="alert alert-info">
+        <strong>Note:</strong> Configuration changes require service restart to take effect. Web admin uses socket activation and auto-shuts down after 60 seconds of idle time.
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+console.log('Dashboard loaded');
+</script>
+{% endblock %}

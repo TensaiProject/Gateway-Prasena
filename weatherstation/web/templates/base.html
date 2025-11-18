@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Weather Station Gateway{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <!-- Top Header -->
+    <header class="header">
+        <div class="header-left">
+            <span class="system-title">Weather Station Gateway</span>
+        </div>
+        <div class="header-right">
+            <span class="status-indicators">
+                <span class="badge badge-success" id="status-system">System OK</span>
+            </span>
+        </div>
+    </header>
+
+    <!-- Main Layout Container -->
+    <div class="layout">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar" id="sidebar">
+            <a href="/" class="sidebar-link {% if request.path == '/' %}active{% endif %}">Dashboard</a>
+            <a href="/settings" class="sidebar-link {% if request.path == '/settings' %}active{% endif %}">Settings</a>
+            <a href="/devices" class="sidebar-link {% if request.path == '/devices' %}active{% endif %}">Devices</a>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- Notification Container -->
+    <div class="notification-container" id="notification-container"></div>
+
+    <!-- Minimal JS for notifications -->
+    <script>
+        function showNotification(message, type = 'info') {
+            const container = document.getElementById('notification-container');
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.textContent = message;
+            container.appendChild(notification);
+
+            setTimeout(() => {
+                notification.classList.add('notification-show');
+            }, 10);
+
+            setTimeout(() => {
+                notification.classList.remove('notification-show');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+    </script>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>
