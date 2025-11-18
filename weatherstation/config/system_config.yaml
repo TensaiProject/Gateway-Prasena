@@ -40,7 +40,7 @@ weather_station:
   enabled: true
   http_port: 5001
   protocol: ecowitt
-  sensor_id: 01K9RSMA56MX6TB703SQR922TH
+  # sensor_id now comes from database (register via web admin)
 upload:
   enabled: false
   interval: 60
