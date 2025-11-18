@@ -353,9 +353,38 @@ init_database() {
     print_info "Initializing database..."
     source venv/bin/activate
 
-    # Run briefly to initialize database
-    timeout 5 python3 -m weatherstation.main --service all \
-        --config weatherstation/config/system_config.yaml || true
+    # Run briefly to initialize database using Python directly
+    # This avoids the issue with timeout not killing child processes
+    python3 << 'EOF'
+import sys
+import os
+import signal
+
+# Add project to path
+sys.path.insert(0, '.')
+
+# Set timeout
+def timeout_handler(signum, frame):
+    print("\n→ Database initialization timeout (5s) - this is normal")
+    os._exit(0)
+
+signal.signal(signal.SIGALRM, timeout_handler)
+signal.alarm(5)  # 5 second timeout
+
+try:
+    from weatherstation.database.db_manager import DatabaseManager
+
+    db_path = './data/weatherstation.db'
+    db = DatabaseManager(db_path)
+
+    # Just initialize - don't run services
+    print("→ Database manager initialized")
+
+except Exception as e:
+    print(f"→ Database init: {e}")
+finally:
+    signal.alarm(0)  # Cancel alarm
+EOF
 
     deactivate
 

@@ -37,13 +37,56 @@ fi
 echo ""
 echo "📦 Installing systemd socket and service..."
 
+# Get actual user (not root)
+ACTUAL_USER="${SUDO_USER:-$USER}"
+INSTALL_DIR="/home/$ACTUAL_USER/Gateway-Prasena"
+
+echo "  User: $ACTUAL_USER"
+echo "  Install dir: $INSTALL_DIR"
+
 # Copy socket file
 cp "$SCRIPT_DIR/web-admin.socket" /etc/systemd/system/
 chmod 644 /etc/systemd/system/web-admin.socket
 
-# Copy service file
-cp "$SCRIPT_DIR/web-admin.service" /etc/systemd/system/
+# Generate service file with correct user and paths
+cat > /etc/systemd/system/web-admin.service <<EOF
+[Unit]
+Description=Weather Station Web Admin (On-Demand)
+After=network.target
+Requires=web-admin.socket
+
+[Service]
+Type=exec
+User=$ACTUAL_USER
+Group=$ACTUAL_USER
+WorkingDirectory=$INSTALL_DIR
+
+# Use venv Python with all dependencies
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=$INSTALL_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=$INSTALL_DIR/venv/bin/python3 -m weatherstation.main --service web
+
+# Auto-restart on failure
+Restart=on-failure
+RestartSec=10
+
+# Resource limits (keep it lightweight)
+MemoryMax=100M
+CPUQuota=50%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=web-admin
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 chmod 644 /etc/systemd/system/web-admin.service
+
+echo "  Created: /etc/systemd/system/web-admin.socket"
+echo "  Created: /etc/systemd/system/web-admin.service"
 
 # Reload systemd
 systemctl daemon-reload
