@@ -9,6 +9,7 @@ import json
 import argparse
 import yaml
 import socket
+import threading
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -45,6 +46,14 @@ class MQTTPublisher:
         self.running = False
         self.connected = False
         self.client: Optional[mqtt.Client] = None
+
+        # Reconnection management
+        self._connect_lock = threading.Lock()
+        self._reconnect_attempts = 0
+        self._max_reconnect_attempts = 10
+        self._max_reconnect_delay = 60  # Max 60 seconds between retries
+        self._circuit_breaker_reset_time = None
+        self._last_health_log = 0
 
         # MQTT config
         mqtt_config = config.get('mqtt', {})
@@ -114,12 +123,52 @@ class MQTTPublisher:
 
     def connect_mqtt(self) -> bool:
         """
-        Connect to MQTT broker
+        Connect to MQTT broker with proper cleanup and backoff
 
         Returns:
             True if successful, False otherwise
         """
+        # Prevent concurrent connection attempts
+        if not self._connect_lock.acquire(blocking=False):
+            logger.debug("Reconnection already in progress, skipping...")
+            return False
+
         try:
+            # Check circuit breaker
+            if self._reconnect_attempts >= self._max_reconnect_attempts:
+                if self._circuit_breaker_reset_time is None:
+                    self._circuit_breaker_reset_time = time.time() + 300  # 5 min cooldown
+                    logger.warning(f"Circuit breaker triggered after {self._max_reconnect_attempts} attempts. Cooldown for 5 minutes...")
+
+                if time.time() >= self._circuit_breaker_reset_time:
+                    logger.info("Circuit breaker reset, retrying connection...")
+                    self._reconnect_attempts = 0
+                    self._circuit_breaker_reset_time = None
+                else:
+                    remaining = int(self._circuit_breaker_reset_time - time.time())
+                    logger.debug(f"Circuit breaker active, {remaining}s remaining...")
+                    return False
+
+            # Exponential backoff delay
+            if self._reconnect_attempts > 0:
+                delay = min(
+                    self.reconnect_delay * (2 ** (self._reconnect_attempts - 1)),
+                    self._max_reconnect_delay
+                )
+                logger.info(f"Waiting {delay}s before reconnect (attempt {self._reconnect_attempts + 1}/{self._max_reconnect_attempts})...")
+                time.sleep(delay)
+
+            # CLEANUP: Stop and disconnect old client first
+            if self.client:
+                logger.debug("Cleaning up old MQTT client...")
+                try:
+                    self.client.loop_stop()
+                    self.client.disconnect()
+                except Exception as e:
+                    logger.debug(f"Cleanup error (ignored): {e}")
+                self.client = None
+                self.connected = False
+
             # Create client ID
             # Priority: 1. Config, 2. Hostname, 3. Timestamp
             if self.client_id:
@@ -177,14 +226,20 @@ class MQTTPublisher:
 
             if self.connected:
                 logger.info("MQTT connection established")
+                self._reconnect_attempts = 0  # Reset on success
+                self._circuit_breaker_reset_time = None
                 return True
             else:
                 logger.error("MQTT connection timeout")
+                self._reconnect_attempts += 1
                 return False
 
         except Exception as e:
             logger.error(f"MQTT connection error: {e}", exc_info=True)
+            self._reconnect_attempts += 1
             return False
+        finally:
+            self._connect_lock.release()
 
     def publish(self, topic: str, payload: Dict[str, Any]) -> bool:
         """
@@ -372,6 +427,7 @@ class MQTTPublisher:
             return 1
 
         self.running = True
+        self._last_health_log = time.time()
 
         try:
             while self.running:
@@ -383,6 +439,13 @@ class MQTTPublisher:
                 if self.cleanup_counter >= self.cleanup_interval:
                     self.run_auto_cleanup()
                     self.cleanup_counter = 0
+
+                # Health check logging every 5 minutes
+                if time.time() - self._last_health_log >= 300:
+                    status = "connected" if self.connected else "disconnected"
+                    circuit_status = "active" if self._circuit_breaker_reset_time else "inactive"
+                    logger.info(f"[HEALTH] MQTT: {status}, reconnect_attempts: {self._reconnect_attempts}, circuit_breaker: {circuit_status}")
+                    self._last_health_log = time.time()
 
                 # Reconnect if disconnected
                 if not self.connected:
