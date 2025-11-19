@@ -220,6 +220,104 @@ class WebAdminService:
                     'error': str(e)
                 }), 500
 
+        @self.app.route('/api/config/mqtt', methods=['GET'])
+        def get_mqtt_config():
+            """Get MQTT connection configuration"""
+            try:
+                config = self._read_config()
+                mqtt_config = config.get('mqtt', {})
+
+                # Return MQTT connection settings (mask password for security)
+                mqtt_data = {
+                    'broker_host': mqtt_config.get('broker_host', ''),
+                    'broker_port': mqtt_config.get('broker_port', 1883),
+                    'username': mqtt_config.get('username', ''),
+                    'password': mqtt_config.get('password', ''),
+                    'qos': mqtt_config.get('qos', 1),
+                    'keepalive': mqtt_config.get('keepalive', 60),
+                    'client_id': mqtt_config.get('client_id', '')
+                }
+
+                return jsonify({
+                    'success': True,
+                    'data': mqtt_data
+                })
+            except Exception as e:
+                logger.error(f"Error reading MQTT config: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 500
+
+        @self.app.route('/api/config/mqtt', methods=['PUT'])
+        def update_mqtt_config():
+            """Update MQTT connection configuration"""
+            try:
+                new_mqtt = request.json
+
+                # Validate MQTT config
+                validation_error = self._validate_mqtt_config(new_mqtt)
+                if validation_error:
+                    return jsonify({
+                        'success': False,
+                        'error': validation_error
+                    }), 400
+
+                # Read current config
+                config = self._read_config()
+
+                # Ensure mqtt section exists
+                if 'mqtt' not in config:
+                    config['mqtt'] = {}
+
+                # Update MQTT settings
+                if 'broker_host' in new_mqtt:
+                    config['mqtt']['broker_host'] = new_mqtt['broker_host']
+                    # Also update broker_url for compatibility
+                    port = new_mqtt.get('broker_port', config['mqtt'].get('broker_port', 1883))
+                    config['mqtt']['broker_url'] = f"mqtt://{new_mqtt['broker_host']}:{port}"
+
+                if 'broker_port' in new_mqtt:
+                    config['mqtt']['broker_port'] = new_mqtt['broker_port']
+                    # Update broker_url
+                    host = config['mqtt'].get('broker_host', 'localhost')
+                    config['mqtt']['broker_url'] = f"mqtt://{host}:{new_mqtt['broker_port']}"
+
+                if 'username' in new_mqtt:
+                    config['mqtt']['username'] = new_mqtt['username']
+
+                if 'password' in new_mqtt:
+                    config['mqtt']['password'] = new_mqtt['password']
+
+                if 'qos' in new_mqtt:
+                    config['mqtt']['qos'] = new_mqtt['qos']
+
+                if 'keepalive' in new_mqtt:
+                    config['mqtt']['keepalive'] = new_mqtt['keepalive']
+
+                if 'client_id' in new_mqtt:
+                    if new_mqtt['client_id']:
+                        config['mqtt']['client_id'] = new_mqtt['client_id']
+                    elif 'client_id' in config['mqtt']:
+                        # Remove client_id if empty (use auto-generated)
+                        del config['mqtt']['client_id']
+
+                # Write config back
+                self._write_config(config)
+
+                logger.info(f"MQTT config updated successfully")
+
+                return jsonify({
+                    'success': True,
+                    'message': 'MQTT configuration updated. Restart services for changes to take effect.'
+                })
+            except Exception as e:
+                logger.error(f"Error updating MQTT config: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 500
+
         # ============================================
         # API ENDPOINTS - DEVICE MANAGEMENT
         # ============================================
@@ -542,6 +640,66 @@ class WebAdminService:
                 if 'backup_interval' in intervals['database']:
                     if not (3600 <= intervals['database']['backup_interval'] <= 604800):
                         return "Database backup_interval must be between 3600-604800 seconds"
+
+            return None
+        except Exception as e:
+            return f"Validation error: {str(e)}"
+
+    def _validate_mqtt_config(self, mqtt_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Validate MQTT configuration values
+
+        Returns:
+            Error message if invalid, None if valid
+        """
+        try:
+            # Validate broker_host
+            if 'broker_host' in mqtt_data:
+                host = mqtt_data['broker_host']
+                if not host or not isinstance(host, str):
+                    return "Broker host is required"
+                if len(host) > 255:
+                    return "Broker host must be less than 255 characters"
+
+            # Validate broker_port
+            if 'broker_port' in mqtt_data:
+                port = mqtt_data['broker_port']
+                if not isinstance(port, int) or not (1 <= port <= 65535):
+                    return "Broker port must be between 1-65535"
+
+            # Validate username
+            if 'username' in mqtt_data:
+                username = mqtt_data['username']
+                if not isinstance(username, str):
+                    return "Username must be a string"
+                if len(username) > 255:
+                    return "Username must be less than 255 characters"
+
+            # Validate password
+            if 'password' in mqtt_data:
+                password = mqtt_data['password']
+                if not isinstance(password, str):
+                    return "Password must be a string"
+
+            # Validate QoS
+            if 'qos' in mqtt_data:
+                qos = mqtt_data['qos']
+                if not isinstance(qos, int) or qos not in [0, 1, 2]:
+                    return "QoS must be 0, 1, or 2"
+
+            # Validate keepalive
+            if 'keepalive' in mqtt_data:
+                keepalive = mqtt_data['keepalive']
+                if not isinstance(keepalive, int) or not (10 <= keepalive <= 3600):
+                    return "Keepalive must be between 10-3600 seconds"
+
+            # Validate client_id
+            if 'client_id' in mqtt_data:
+                client_id = mqtt_data['client_id']
+                if client_id and not isinstance(client_id, str):
+                    return "Client ID must be a string"
+                if client_id and len(client_id) > 255:
+                    return "Client ID must be less than 255 characters"
 
             return None
         except Exception as e:

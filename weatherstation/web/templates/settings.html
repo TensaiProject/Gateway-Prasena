@@ -40,6 +40,58 @@
             </div>
         </div>
 
+        <!-- MQTT Connection Configuration -->
+        <div class="panel">
+            <div class="panel-header">MQTT Connection Settings</div>
+            <div class="panel-body">
+                <div class="form-group">
+                    <label for="mqtt-broker-host">Broker Host</label>
+                    <input type="text" id="mqtt-broker-host" placeholder="e.g. emqx.prasenaenergy.com" required>
+                    <span class="form-text">MQTT broker hostname or IP address</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="mqtt-broker-port">Broker Port</label>
+                    <input type="number" id="mqtt-broker-port" min="1" max="65535" required>
+                    <span class="form-text">Range: 1-65535. Default: 1883 (TCP) or 8883 (SSL)</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="mqtt-username">Username</label>
+                    <input type="text" id="mqtt-username" placeholder="MQTT username">
+                    <span class="form-text">Leave empty if no authentication required</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="mqtt-password">Password</label>
+                    <input type="password" id="mqtt-password" placeholder="MQTT password">
+                    <span class="form-text">Leave empty if no authentication required</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="mqtt-qos">QoS Level</label>
+                    <select id="mqtt-qos" required>
+                        <option value="0">0 - At most once (fire and forget)</option>
+                        <option value="1">1 - At least once (default)</option>
+                        <option value="2">2 - Exactly once (highest overhead)</option>
+                    </select>
+                    <span class="form-text">Quality of Service level for message delivery</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="mqtt-keepalive">Keepalive (seconds)</label>
+                    <input type="number" id="mqtt-keepalive" min="10" max="3600" required>
+                    <span class="form-text">Range: 10-3600s. Interval between ping packets to broker</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="mqtt-client-id">Client ID (optional)</label>
+                    <input type="text" id="mqtt-client-id" placeholder="Leave empty for auto-generated">
+                    <span class="form-text">Leave empty to use auto-generated: gateway_{hostname}</span>
+                </div>
+            </div>
+        </div>
+
         <!-- MQTT Publisher Configuration -->
         <div class="panel">
             <div class="panel-header">MQTT Publisher Settings</div>
@@ -143,8 +195,9 @@
 
 {% block extra_scripts %}
 <script>
-// Current intervals (loaded from API)
+// Current settings (loaded from API)
 let currentIntervals = null;
+let currentMqttConfig = null;
 
 // Fetch current intervals
 async function loadIntervals() {
@@ -154,18 +207,36 @@ async function loadIntervals() {
 
         if (result.success) {
             currentIntervals = result.data;
-            populateForm(currentIntervals);
+            populateIntervalsForm(currentIntervals);
         } else {
-            showNotification('Error loading settings: ' + result.error, 'danger');
+            showNotification('Error loading intervals: ' + result.error, 'danger');
         }
     } catch (error) {
         console.error('Error loading intervals:', error);
-        showNotification('Error loading settings', 'danger');
+        showNotification('Error loading intervals', 'danger');
     }
 }
 
-// Populate form with current values
-function populateForm(intervals) {
+// Fetch current MQTT config
+async function loadMqttConfig() {
+    try {
+        const response = await fetch('/api/config/mqtt');
+        const result = await response.json();
+
+        if (result.success) {
+            currentMqttConfig = result.data;
+            populateMqttForm(currentMqttConfig);
+        } else {
+            showNotification('Error loading MQTT config: ' + result.error, 'danger');
+        }
+    } catch (error) {
+        console.error('Error loading MQTT config:', error);
+        showNotification('Error loading MQTT config', 'danger');
+    }
+}
+
+// Populate intervals form with current values
+function populateIntervalsForm(intervals) {
     document.getElementById('battery-sampling-rate').value = intervals.battery_sensors.sampling_rate;
     document.getElementById('battery-poll-interval').value = intervals.battery_sensors.poll_interval;
     document.getElementById('battery-aggregation-window').value = intervals.battery_sensors.aggregation_window;
@@ -175,11 +246,27 @@ function populateForm(intervals) {
     document.getElementById('database-backup-interval').value = intervals.database.backup_interval;
 }
 
+// Populate MQTT config form
+function populateMqttForm(mqttConfig) {
+    document.getElementById('mqtt-broker-host').value = mqttConfig.broker_host || '';
+    document.getElementById('mqtt-broker-port').value = mqttConfig.broker_port || 1883;
+    document.getElementById('mqtt-username').value = mqttConfig.username || '';
+    document.getElementById('mqtt-password').value = mqttConfig.password || '';
+    document.getElementById('mqtt-qos').value = mqttConfig.qos || 1;
+    document.getElementById('mqtt-keepalive').value = mqttConfig.keepalive || 60;
+    document.getElementById('mqtt-client-id').value = mqttConfig.client_id || '';
+}
+
+// Populate all forms
+function populateForm(intervals) {
+    populateIntervalsForm(intervals);
+}
+
 // Handle form submission
 document.getElementById('settings-form').addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    // Collect form data
+    // Collect intervals form data
     const newIntervals = {
         battery_sensors: {
             sampling_rate: parseInt(document.getElementById('battery-sampling-rate').value),
@@ -200,28 +287,67 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
         }
     };
 
-    // Send update request
+    // Collect MQTT config data
+    const newMqttConfig = {
+        broker_host: document.getElementById('mqtt-broker-host').value,
+        broker_port: parseInt(document.getElementById('mqtt-broker-port').value),
+        username: document.getElementById('mqtt-username').value,
+        password: document.getElementById('mqtt-password').value,
+        qos: parseInt(document.getElementById('mqtt-qos').value),
+        keepalive: parseInt(document.getElementById('mqtt-keepalive').value),
+        client_id: document.getElementById('mqtt-client-id').value
+    };
+
+    let hasError = false;
+
+    // Send intervals update request
     try {
-        const response = await fetch('/api/config/intervals', {
+        const intervalsResponse = await fetch('/api/config/intervals', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newIntervals)
         });
 
-        const result = await response.json();
+        const intervalsResult = await intervalsResponse.json();
 
-        if (result.success) {
-            showNotification('Settings saved successfully! Click "Restart Services" to apply.', 'success');
+        if (intervalsResult.success) {
             currentIntervals = newIntervals;
-
-            // Show restart button
-            document.getElementById('restart-btn').classList.remove('hidden');
         } else {
-            showNotification('Error saving settings: ' + result.error, 'danger');
+            showNotification('Error saving intervals: ' + intervalsResult.error, 'danger');
+            hasError = true;
         }
     } catch (error) {
-        console.error('Error saving settings:', error);
-        showNotification('Error saving settings', 'danger');
+        console.error('Error saving intervals:', error);
+        showNotification('Error saving intervals', 'danger');
+        hasError = true;
+    }
+
+    // Send MQTT config update request
+    try {
+        const mqttResponse = await fetch('/api/config/mqtt', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newMqttConfig)
+        });
+
+        const mqttResult = await mqttResponse.json();
+
+        if (mqttResult.success) {
+            currentMqttConfig = newMqttConfig;
+        } else {
+            showNotification('Error saving MQTT config: ' + mqttResult.error, 'danger');
+            hasError = true;
+        }
+    } catch (error) {
+        console.error('Error saving MQTT config:', error);
+        showNotification('Error saving MQTT config', 'danger');
+        hasError = true;
+    }
+
+    if (!hasError) {
+        showNotification('Settings saved successfully! Click "Restart Services" to apply.', 'success');
+        // Show restart button
+        document.getElementById('restart-btn').classList.remove('hidden');
     }
 });
 
@@ -264,12 +390,16 @@ document.getElementById('restart-btn').addEventListener('click', async () => {
 // Reset form to current values
 document.getElementById('reset-btn').addEventListener('click', () => {
     if (currentIntervals) {
-        populateForm(currentIntervals);
-        showNotification('Form reset to current values', 'info');
+        populateIntervalsForm(currentIntervals);
     }
+    if (currentMqttConfig) {
+        populateMqttForm(currentMqttConfig);
+    }
+    showNotification('Form reset to current values', 'info');
 });
 
-// Load intervals on page load
+// Load all settings on page load
 loadIntervals();
+loadMqttConfig();
 </script>
 {% endblock %}
