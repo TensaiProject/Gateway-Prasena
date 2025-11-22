@@ -532,6 +532,7 @@ class WebAdminService:
             """Restart all weather station services"""
             try:
                 import subprocess
+                import threading
 
                 # Check if using combined service or individual services
                 check_combined = subprocess.run(
@@ -547,45 +548,36 @@ class WebAdminService:
                     # Using individual services
                     services = ['battery-reader', 'mqtt-publisher', 'weather-receiver', 'upload-service']
 
-                # Restart each service
-                restarted = []
-                failed = []
+                def restart_async():
+                    """Restart services in background"""
+                    import time
+                    time.sleep(0.5)  # Give time for response to be sent
 
-                for service in services:
-                    try:
-                        # Use sudo systemctl restart
-                        result = subprocess.run(
-                            ['sudo', 'systemctl', 'restart', f'{service}.service'],
-                            capture_output=True,
-                            text=True,
-                            timeout=10
-                        )
+                    for service in services:
+                        try:
+                            result = subprocess.run(
+                                ['sudo', 'systemctl', 'restart', f'{service}.service'],
+                                capture_output=True,
+                                text=True,
+                                timeout=10
+                            )
+                            if result.returncode == 0:
+                                logger.info(f"Service restarted: {service}")
+                            else:
+                                logger.error(f"Failed to restart {service}: {result.stderr}")
+                        except Exception as e:
+                            logger.error(f"Error restarting {service}: {e}")
 
-                        if result.returncode == 0:
-                            restarted.append(service)
-                            logger.info(f"Service restarted: {service}")
-                        else:
-                            failed.append(f"{service}: {result.stderr}")
-                            logger.error(f"Failed to restart {service}: {result.stderr}")
-                    except Exception as e:
-                        failed.append(f"{service}: {str(e)}")
-                        logger.error(f"Error restarting {service}: {e}")
+                # Start restart in background thread
+                thread = threading.Thread(target=restart_async, daemon=True)
+                thread.start()
 
-                if failed:
-                    return jsonify({
-                        'success': False,
-                        'message': f'Some services failed to restart',
-                        'data': {
-                            'restarted': restarted,
-                            'failed': failed
-                        }
-                    }), 500
-
+                # Return response immediately
                 return jsonify({
                     'success': True,
-                    'message': f'All services restarted successfully',
+                    'message': f'Services restart initiated. Check status in a few seconds.',
                     'data': {
-                        'restarted': restarted
+                        'services': services
                     }
                 })
             except Exception as e:
