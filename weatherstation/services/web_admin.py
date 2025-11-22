@@ -533,8 +533,19 @@ class WebAdminService:
             try:
                 import subprocess
 
-                # Get service names from config
-                services = ['battery-reader', 'mqtt-publisher', 'weather-receiver', 'upload-service']
+                # Check if using combined service or individual services
+                check_combined = subprocess.run(
+                    ['systemctl', 'is-active', 'weatherstation.service'],
+                    capture_output=True,
+                    text=True
+                )
+
+                if check_combined.returncode == 0:
+                    # Using combined weatherstation.service
+                    services = ['weatherstation']
+                else:
+                    # Using individual services
+                    services = ['battery-reader', 'mqtt-publisher', 'weather-receiver', 'upload-service']
 
                 # Restart each service
                 restarted = []
