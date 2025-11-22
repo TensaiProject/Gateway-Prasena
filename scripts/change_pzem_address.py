@@ -190,47 +190,61 @@ class PZEMAddressChanger:
         """
         Write value to Modbus register (function code 0x06)
         """
-        # Open serial
-        self.pi.bb_serial_read_close(self.rx_pin)
-        self.pi.bb_serial_read_open(self.rx_pin, self.baudrate, 8)
+        try:
+            # Close any existing serial read (ignore errors)
+            try:
+                self.pi.bb_serial_read_close(self.rx_pin)
+            except:
+                pass
 
-        # Build Modbus RTU request (Preset Single Register - 0x06)
-        request = bytes([
-            address,                    # Slave address
-            0x06,                       # Function code: Preset Single Register
-            (register >> 8) & 0xFF,     # Register address high byte
-            register & 0xFF,            # Register address low byte
-            (value >> 8) & 0xFF,        # Value high byte
-            value & 0xFF                # Value low byte
-        ])
+            # Open serial
+            self.pi.bb_serial_read_open(self.rx_pin, self.baudrate, 8)
 
-        # Calculate CRC16
-        crc = self._calculate_crc16(request)
-        request = request + crc.to_bytes(2, 'little')
+            # Build Modbus RTU request (Preset Single Register - 0x06)
+            request = bytes([
+                address,                    # Slave address
+                0x06,                       # Function code: Preset Single Register
+                (register >> 8) & 0xFF,     # Register address high byte
+                register & 0xFF,            # Register address low byte
+                (value >> 8) & 0xFF,        # Value high byte
+                value & 0xFF                # Value low byte
+            ])
 
-        # Send request
-        self.pi.wave_clear()
-        self.pi.wave_add_serial(self.tx_pin, self.baudrate, request, 0, 8, 2)
-        wave_id = self.pi.wave_create()
-        self.pi.wave_send_once(wave_id)
+            # Calculate CRC16
+            crc = self._calculate_crc16(request)
+            request = request + crc.to_bytes(2, 'little')
 
-        # Wait for transmission
-        while self.pi.wave_tx_busy():
-            time.sleep(0.001)
+            # Send request
+            self.pi.wave_clear()
+            self.pi.wave_add_serial(self.tx_pin, self.baudrate, request, 0, 8, 2)
+            wave_id = self.pi.wave_create()
+            self.pi.wave_send_once(wave_id)
 
-        # Wait for response
-        time.sleep(0.15)
+            # Wait for transmission
+            while self.pi.wave_tx_busy():
+                time.sleep(0.001)
 
-        # Read response
-        count, data = self.pi.bb_serial_read(self.rx_pin)
+            # Wait for response (longer delay for write operation)
+            time.sleep(0.3)
 
-        # Cleanup
-        self.pi.wave_delete(wave_id)
-        self.pi.bb_serial_read_close(self.rx_pin)
+            # Read response
+            count, data = self.pi.bb_serial_read(self.rx_pin)
 
-        # Verify response
-        if count < 8:
-            raise IOError(f"Invalid response: expected 8 bytes, got {count}")
+            # Cleanup
+            self.pi.wave_delete(wave_id)
+            self.pi.bb_serial_read_close(self.rx_pin)
+
+            # Verify response
+            if count < 8:
+                raise IOError(f"Invalid response: expected 8 bytes, got {count}")
+
+        except Exception as e:
+            # Ensure cleanup even on error
+            try:
+                self.pi.bb_serial_read_close(self.rx_pin)
+            except:
+                pass
+            raise e
 
     def _calculate_crc16(self, data: bytes) -> int:
         """
