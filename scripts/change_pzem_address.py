@@ -93,56 +93,41 @@ class PZEMAddressChanger:
 
     def _test_address(self, address: int) -> bool:
         """
-        Test if sensor responds at given address
+        Test if sensor responds at given address using BatterySensor class
 
         Returns:
             True if sensor found
         """
+        from weatherstation.sensors.battery_reader import BatterySensor
+
+        sensor = None
         try:
-            # Open serial
-            self.pi.bb_serial_read_close(self.rx_pin)
-            self.pi.bb_serial_read_open(self.rx_pin, self.baudrate, 8)
+            # Use BatterySensor class which has proven retry mechanism
+            sensor = BatterySensor(
+                modbus_address=address,
+                tx_pin=self.tx_pin,
+                rx_pin=self.rx_pin
+            )
 
-            # Build Modbus RTU request to read voltage (register 0x0000, 1 word)
-            # Format: [address][function][reg_hi][reg_lo][count_hi][count_lo][crc_lo][crc_hi]
-            request = bytes([
-                address,    # Slave address
-                0x04,       # Function code: Read Input Registers
-                0x00,       # Register address high byte
-                0x00,       # Register address low byte (voltage = 0x0000)
-                0x00,       # Number of registers high byte
-                0x01        # Number of registers low byte (read 1 register)
-            ])
+            # Try to read data
+            data = sensor.read_all()
 
-            # Calculate CRC16
-            crc = self._calculate_crc16(request)
-            request = request + crc.to_bytes(2, 'little')
-
-            # Send request
-            self.pi.wave_clear()
-            self.pi.wave_add_serial(self.tx_pin, self.baudrate, request, 0, 8, 2)
-            wave_id = self.pi.wave_create()
-            self.pi.wave_send_once(wave_id)
-
-            # Wait for transmission
-            while self.pi.wave_tx_busy():
-                time.sleep(0.001)
-
-            # Wait for response
-            time.sleep(0.1)
-
-            # Read response
-            count, data = self.pi.bb_serial_read(self.rx_pin)
-
-            # Cleanup
-            self.pi.wave_delete(wave_id)
-            self.pi.bb_serial_read_close(self.rx_pin)
-
-            # Valid response should be at least 7 bytes
-            return count >= 7
+            # Validate voltage is reasonable
+            voltage = data.get('voltage', 0)
+            if 0 < voltage < 500:
+                return True
+            return False
 
         except Exception:
             return False
+        finally:
+            if sensor:
+                try:
+                    sensor.close()
+                except:
+                    pass
+            # Small delay to let pigpio settle
+            time.sleep(0.2)
 
     def change_address(self, old_address: int, new_address: int) -> bool:
         """
