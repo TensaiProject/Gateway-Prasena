@@ -616,8 +616,8 @@ class WebAdminService:
                     if not (1 <= battery['poll_interval'] <= 3600):
                         return "Battery poll_interval must be between 1-3600 seconds"
                 if 'aggregation_window' in battery:
-                    if not (60 <= battery['aggregation_window'] <= 86400):
-                        return "Battery aggregation_window must be between 60-86400 seconds"
+                    if not (15 <= battery['aggregation_window'] <= 86400):
+                        return "Battery aggregation_window must be between 15-86400 seconds"
 
             # Validate MQTT intervals
             if 'mqtt' in intervals and 'publisher' in intervals['mqtt']:
