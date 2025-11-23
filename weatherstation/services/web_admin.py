@@ -318,6 +318,330 @@ class WebAdminService:
                     'error': str(e)
                 }), 500
 
+        @self.app.route('/api/config/wifi', methods=['GET'])
+        def get_wifi_config():
+            """Get current WiFi configuration"""
+            try:
+                import subprocess
+
+                # Get current WiFi SSID
+                result = subprocess.run(
+                    ['nmcli', '-t', '-f', 'active,ssid', 'dev', 'wifi'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+                current_ssid = None
+                if result.returncode == 0:
+                    for line in result.stdout.strip().split('\n'):
+                        if line.startswith('yes:'):
+                            current_ssid = line.split(':', 1)[1]
+                            break
+
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'current_ssid': current_ssid or 'Unknown',
+                        'connected': current_ssid is not None
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error getting WiFi config: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 500
+
+        @self.app.route('/api/config/wifi', methods=['PUT'])
+        def update_wifi_config():
+            """Update WiFi configuration with optional static IP"""
+            try:
+                import subprocess
+                import time
+
+                data = request.json
+                ssid = data.get('ssid', '').strip()
+                password = data.get('password', '').strip()
+                ip_method = data.get('ip_method', 'dhcp')  # 'dhcp' or 'static'
+
+                # Static IP parameters
+                ip_address = data.get('ip_address', '').strip()
+                gateway = data.get('gateway', '').strip()
+                netmask = data.get('netmask', '255.255.255.0').strip()
+                dns = data.get('dns', '8.8.8.8').strip()
+
+                # Validation
+                if not ssid:
+                    return jsonify({
+                        'success': False,
+                        'error': 'SSID is required'
+                    }), 400
+
+                if len(password) < 8 and password:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Password must be at least 8 characters (or empty for open network)'
+                    }), 400
+
+                if ip_method == 'static':
+                    if not ip_address or not gateway:
+                        return jsonify({
+                            'success': False,
+                            'error': 'IP address and gateway are required for static IP'
+                        }), 400
+
+                # Delete existing connection if exists
+                subprocess.run(
+                    ['sudo', 'nmcli', 'connection', 'delete', ssid],
+                    capture_output=True,
+                    timeout=10
+                )
+
+                # Connect to WiFi first
+                if password:
+                    cmd = [
+                        'sudo', 'nmcli', 'device', 'wifi', 'connect', ssid,
+                        'password', password
+                    ]
+                else:
+                    cmd = [
+                        'sudo', 'nmcli', 'device', 'wifi', 'connect', ssid
+                    ]
+
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
+                if result.returncode != 0:
+                    logger.error(f"Failed to connect to WiFi: {result.stderr}")
+                    return jsonify({
+                        'success': False,
+                        'error': f'Failed to connect: {result.stderr}'
+                    }), 500
+
+                # Wait for connection to establish
+                time.sleep(2)
+
+                # Configure IP settings
+                if ip_method == 'static':
+                    # Set static IP
+                    cidr = ip_address + '/' + netmask.split('.')[-1] if '/' not in ip_address else ip_address
+
+                    subprocess.run(
+                        ['sudo', 'nmcli', 'connection', 'modify', ssid,
+                         'ipv4.addresses', cidr,
+                         'ipv4.gateway', gateway,
+                         'ipv4.dns', dns,
+                         'ipv4.method', 'manual'],
+                        capture_output=True,
+                        timeout=10
+                    )
+
+                    # Restart connection to apply static IP
+                    subprocess.run(
+                        ['sudo', 'nmcli', 'connection', 'down', ssid],
+                        capture_output=True,
+                        timeout=10
+                    )
+                    time.sleep(1)
+                    subprocess.run(
+                        ['sudo', 'nmcli', 'connection', 'up', ssid],
+                        capture_output=True,
+                        timeout=10
+                    )
+                    time.sleep(2)
+                else:
+                    # Ensure DHCP is set (default)
+                    subprocess.run(
+                        ['sudo', 'nmcli', 'connection', 'modify', ssid,
+                         'ipv4.method', 'auto'],
+                        capture_output=True,
+                        timeout=10
+                    )
+
+                # Get new IP address
+                new_ip = None
+                try:
+                    result = subprocess.run(
+                        ['hostname', '-I'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        ips = result.stdout.strip().split()
+                        if ips:
+                            new_ip = ips[0]
+                except:
+                    pass
+
+                logger.info(f"WiFi configuration updated: {ssid}, IP method: {ip_method}, New IP: {new_ip}")
+
+                return jsonify({
+                    'success': True,
+                    'message': f'Successfully connected to {ssid}',
+                    'data': {
+                        'ssid': ssid,
+                        'ip_address': new_ip,
+                        'ip_method': ip_method
+                    }
+                })
+
+            except subprocess.TimeoutExpired:
+                return jsonify({
+                    'success': False,
+                    'error': 'WiFi connection timeout. Please check SSID and password.'
+                }), 500
+            except Exception as e:
+                logger.error(f"Error updating WiFi config: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 500
+
+        @self.app.route('/api/wifi/scan', methods=['GET'])
+        def scan_wifi():
+            """Scan for available WiFi networks"""
+            try:
+                import subprocess
+
+                # Rescan WiFi networks
+                subprocess.run(
+                    ['sudo', 'nmcli', 'device', 'wifi', 'rescan'],
+                    capture_output=True,
+                    timeout=10
+                )
+
+                # Get list of networks
+                result = subprocess.run(
+                    ['nmcli', '-t', '-f', 'ssid,signal,security', 'dev', 'wifi', 'list'],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+
+                networks = []
+                if result.returncode == 0:
+                    for line in result.stdout.strip().split('\n'):
+                        if line:
+                            parts = line.split(':', 2)
+                            if len(parts) >= 3 and parts[0]:  # Skip empty SSIDs
+                                networks.append({
+                                    'ssid': parts[0],
+                                    'signal': int(parts[1]) if parts[1].isdigit() else 0,
+                                    'security': parts[2] if parts[2] else 'Open'
+                                })
+
+                # Sort by signal strength
+                networks.sort(key=lambda x: x['signal'], reverse=True)
+
+                return jsonify({
+                    'success': True,
+                    'data': networks
+                })
+            except Exception as e:
+                logger.error(f"Error scanning WiFi: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 500
+
+        @self.app.route('/api/network/info', methods=['GET'])
+        def get_network_info():
+            """Get current network information (WiFi SSID, IP, Gateway, DNS)"""
+            try:
+                import subprocess
+
+                network_info = {
+                    'wifi': {'ssid': None, 'connected': False},
+                    'ip': {'address': None, 'gateway': None, 'dns': None, 'method': 'dhcp'}
+                }
+
+                # Get WiFi SSID
+                try:
+                    result = subprocess.run(
+                        ['nmcli', '-t', '-f', 'active,ssid', 'dev', 'wifi'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        for line in result.stdout.strip().split('\n'):
+                            if line.startswith('yes:'):
+                                network_info['wifi']['ssid'] = line.split(':', 1)[1]
+                                network_info['wifi']['connected'] = True
+                                break
+                except:
+                    pass
+
+                # Get IP address, gateway, DNS
+                try:
+                    # Get IP address
+                    result = subprocess.run(
+                        ['hostname', '-I'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        ips = result.stdout.strip().split()
+                        if ips:
+                            network_info['ip']['address'] = ips[0]  # First IP (usually WiFi/Ethernet)
+
+                    # Get gateway
+                    result = subprocess.run(
+                        ['ip', 'route', 'show', 'default'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        # Output: "default via 192.168.1.1 dev wlan0 ..."
+                        parts = result.stdout.strip().split()
+                        if len(parts) >= 3 and parts[0] == 'default' and parts[1] == 'via':
+                            network_info['ip']['gateway'] = parts[2]
+
+                    # Get DNS
+                    try:
+                        with open('/etc/resolv.conf', 'r') as f:
+                            for line in f:
+                                if line.startswith('nameserver'):
+                                    dns = line.split()[1]
+                                    network_info['ip']['dns'] = dns
+                                    break
+                    except:
+                        pass
+
+                    # Check if using static IP (check nmcli connection)
+                    if network_info['wifi']['ssid']:
+                        result = subprocess.run(
+                            ['nmcli', '-t', '-f', 'ipv4.method', 'connection', 'show', network_info['wifi']['ssid']],
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        if result.returncode == 0:
+                            method = result.stdout.strip().split(':')[-1]
+                            if method == 'manual':
+                                network_info['ip']['method'] = 'static'
+                except:
+                    pass
+
+                return jsonify({
+                    'success': True,
+                    'data': network_info
+                })
+            except Exception as e:
+                logger.error(f"Error getting network info: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 500
+
         # ============================================
         # API ENDPOINTS - DEVICE MANAGEMENT
         # ============================================
