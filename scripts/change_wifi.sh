@@ -1,6 +1,6 @@
 #!/bin/bash
 # Gateway-Prasena WiFi Configuration Script
-# Interactive script to change WiFi connection via SSH
+# Auto DHCP → Static IP Conversion (Zero User Configuration)
 
 set -e
 
@@ -19,28 +19,30 @@ fi
 # Get the actual user (not root)
 ACTUAL_USER="${SUDO_USER:-$USER}"
 
-echo "[1/6] Current WiFi Status"
+echo "[1/5] Current WiFi Status"
 echo "--------------------------------------"
 CURRENT_SSID=$(iwgetid -r 2>/dev/null || echo "Not connected")
+CURRENT_IP=$(hostname -I | awk '{print $1}')
 echo "Current WiFi: $CURRENT_SSID"
+echo "Current IP: $CURRENT_IP"
 echo ""
 
 # Ask if user wants to scan
 read -p "Scan for available WiFi networks? (y/n): " SCAN_CHOICE
 if [ "$SCAN_CHOICE" = "y" ]; then
     echo ""
-    echo "[2/6] Scanning WiFi Networks..."
+    echo "[2/5] Scanning WiFi Networks..."
     echo "--------------------------------------"
     nmcli device wifi list
     echo ""
 else
     echo ""
-    echo "[2/6] Skipping WiFi scan"
+    echo "[2/5] Skipping WiFi scan"
     echo ""
 fi
 
 # Get WiFi SSID
-echo "[3/6] WiFi Credentials"
+echo "[3/5] WiFi Credentials"
 echo "--------------------------------------"
 read -p "Enter WiFi SSID: " WIFI_SSID
 
@@ -54,114 +56,193 @@ read -sp "Enter WiFi Password (leave empty for open network): " WIFI_PASSWORD
 echo ""
 echo ""
 
-# IP Configuration
-echo "[4/6] IP Configuration"
-echo "--------------------------------------"
-echo "1) DHCP (Automatic IP)"
-echo "2) Static IP"
-read -p "Choose IP configuration method (1 or 2): " IP_METHOD
-
-if [ "$IP_METHOD" = "2" ]; then
-    # Static IP configuration
-    read -p "Enter IP Address (e.g., 192.168.1.100): " STATIC_IP
-    read -p "Enter Gateway (e.g., 192.168.1.1): " GATEWAY
-    read -p "Enter Subnet Mask [255.255.255.0]: " NETMASK
-    NETMASK=${NETMASK:-255.255.255.0}
-    read -p "Enter DNS Server [8.8.8.8]: " DNS
-    DNS=${DNS:-8.8.8.8}
-
-    # Convert netmask to CIDR
-    if [ "$NETMASK" = "255.255.255.0" ]; then
-        CIDR="24"
-    elif [ "$NETMASK" = "255.255.0.0" ]; then
-        CIDR="16"
-    elif [ "$NETMASK" = "255.0.0.0" ]; then
-        CIDR="8"
-    else
-        CIDR="24"  # Default
-    fi
-
-    IP_CONFIG="static"
-    STATIC_IP_CIDR="$STATIC_IP/$CIDR"
-else
-    IP_CONFIG="dhcp"
-fi
-
-echo ""
-echo "[5/6] Connecting to WiFi"
+# Auto DHCP → Static Conversion
+echo "[4/5] Connecting and Configuring WiFi"
 echo "--------------------------------------"
 echo "SSID: $WIFI_SSID"
-echo "IP Method: $IP_CONFIG"
+echo "Method: Auto (DHCP → Static)"
+echo ""
 
 # Disconnect from current WiFi if connected
 if [ "$CURRENT_SSID" != "Not connected" ]; then
     echo "Disconnecting from current WiFi: $CURRENT_SSID"
     nmcli connection down "$CURRENT_SSID" 2>/dev/null || true
+    sleep 1
 fi
 
-# Connect to WiFi
+# Step 1: Connect with DHCP mode (temporary)
+echo "Connecting to $WIFI_SSID with DHCP..."
 if [ -n "$WIFI_PASSWORD" ]; then
-    echo "Connecting to $WIFI_SSID with password..."
     nmcli device wifi connect "$WIFI_SSID" password "$WIFI_PASSWORD"
 else
-    echo "Connecting to $WIFI_SSID (open network)..."
     nmcli device wifi connect "$WIFI_SSID"
 fi
 
-# Wait for connection
-sleep 2
+# Wait for connection to establish
+sleep 3
 
-# Configure IP settings
-if [ "$IP_CONFIG" = "static" ]; then
-    echo "Configuring static IP: $STATIC_IP"
-    nmcli connection modify "$WIFI_SSID" ipv4.addresses "$STATIC_IP_CIDR"
-    nmcli connection modify "$WIFI_SSID" ipv4.gateway "$GATEWAY"
-    nmcli connection modify "$WIFI_SSID" ipv4.dns "$DNS"
-    nmcli connection modify "$WIFI_SSID" ipv4.method manual
+# Step 2: Auto-detect network configuration
+echo "Auto-detecting network configuration..."
 
-    # Restart connection to apply static IP
-    nmcli connection down "$WIFI_SSID" 2>/dev/null || true
-    sleep 1
-    nmcli connection up "$WIFI_SSID"
-    sleep 2
-else
-    echo "Using DHCP (automatic IP)..."
-    nmcli connection modify "$WIFI_SSID" ipv4.method auto
+# Detect WiFi interface (wlan0 or wlan1)
+WIFI_INTERFACE=$(nmcli -t -f DEVICE,TYPE device | grep wifi | cut -d: -f1 | head -n1)
+
+if [ -z "$WIFI_INTERFACE" ]; then
+    echo "ERROR: WiFi interface not found!"
+    exit 1
 fi
 
+# Detect IP address from DHCP (with retry)
+DETECTED_IP=""
+for i in {1..10}; do
+    DETECTED_IP=$(ip -4 addr show "$WIFI_INTERFACE" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1)
+    if [ -n "$DETECTED_IP" ]; then
+        break
+    fi
+    sleep 1
+done
+
+if [ -z "$DETECTED_IP" ]; then
+    echo "ERROR: Failed to obtain IP from DHCP!"
+    echo "Please check WiFi password and network availability."
+    exit 1
+fi
+
+# Detect Gateway
+DETECTED_GATEWAY=$(ip route | grep default | grep "$WIFI_INTERFACE" | awk '{print $3}' | head -n1)
+
+if [ -z "$DETECTED_GATEWAY" ]; then
+    echo "ERROR: Failed to detect Gateway!"
+    exit 1
+fi
+
+# Detect Subnet (CIDR notation)
+DETECTED_CIDR=$(ip -4 addr show "$WIFI_INTERFACE" | grep -oP '(?<=inet\s)\d+(\.\d+){3}/\d+' | cut -d/ -f2 | head -n1)
+
+if [ -z "$DETECTED_CIDR" ]; then
+    DETECTED_CIDR="24"  # Default /24
+fi
+
+# Convert CIDR to netmask for display
+case "$DETECTED_CIDR" in
+    8)  NETMASK="255.0.0.0" ;;
+    16) NETMASK="255.255.0.0" ;;
+    24) NETMASK="255.255.255.0" ;;
+    *)  NETMASK="255.255.255.0" ;;
+esac
+
+# Use Google DNS (reliable and fast)
+STATIC_DNS="8.8.8.8"
+
+# Show detected configuration
+echo "  Detected IP: $DETECTED_IP"
+echo "  Detected Gateway: $DETECTED_GATEWAY"
+echo "  Detected Subnet: /$DETECTED_CIDR ($NETMASK)"
+echo "  Using DNS: $STATIC_DNS (Google DNS)"
 echo ""
-echo "[6/6] Verification"
+
+# Step 3: Convert to Static IP (Atomic operation)
+echo "Converting DHCP to Static IP..."
+
+# Modify connection with all settings at once (atomic)
+nmcli connection modify "$WIFI_SSID" \
+    ipv4.method manual \
+    ipv4.addresses "${DETECTED_IP}/${DETECTED_CIDR}" \
+    ipv4.gateway "$DETECTED_GATEWAY" \
+    ipv4.dns "$STATIC_DNS" \
+    connection.autoconnect yes
+
+# Sync to disk (force write)
+sync
+
+# Step 4: Verify config saved to disk
+CONFIG_FILE="/etc/NetworkManager/system-connections/${WIFI_SSID}.nmconnection"
+if [ -f "$CONFIG_FILE" ]; then
+    if grep -q "method=manual" "$CONFIG_FILE" 2>/dev/null; then
+        echo "✓ Static config saved to disk!"
+    else
+        echo "✗ Config save verification failed!"
+        exit 1
+    fi
+else
+    # Try alternative location (older NetworkManager versions)
+    CONFIG_FILE="/etc/NetworkManager/system-connections/${WIFI_SSID}"
+    if [ -f "$CONFIG_FILE" ] && grep -q "method=manual" "$CONFIG_FILE" 2>/dev/null; then
+        echo "✓ Static config saved to disk!"
+    else
+        echo "⚠ Config file verification skipped (file not accessible)"
+    fi
+fi
+
+# Step 5: Restart connection to apply Static IP
+echo "Restarting connection to apply Static IP..."
+nmcli connection down "$WIFI_SSID" 2>/dev/null || true
+sleep 2
+nmcli connection up "$WIFI_SSID"
+
+# Wait for connection
+sleep 3
+
+echo "✓ Connection restarted with Static IP"
+echo ""
+
+# Verification
+echo "[5/5] Verification"
 echo "--------------------------------------"
 
 # Get new connection info
 NEW_SSID=$(iwgetid -r 2>/dev/null || echo "Not connected")
-NEW_IP=$(hostname -I | awk '{print $1}')
+NEW_IP=$(ip -4 addr show "$WIFI_INTERFACE" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1)
+IP_METHOD=$(nmcli -t -f ipv4.method connection show "$WIFI_SSID" | cut -d: -f2)
 
 echo "Connected WiFi: $NEW_SSID"
-echo "IP Address: $NEW_IP"
+echo "IP Address: $NEW_IP (${IP_METHOD^^})"
+echo "Gateway: $DETECTED_GATEWAY"
+echo "DNS: $STATIC_DNS"
+echo "Subnet Mask: $NETMASK"
 echo ""
 
-if [ "$NEW_SSID" = "$WIFI_SSID" ]; then
+# Test internet connectivity
+echo "Testing internet connectivity..."
+if ping -c 2 8.8.8.8 &>/dev/null; then
+    echo "✓ Internet connection working!"
+else
+    echo "⚠ Internet connection test failed (ping timeout)"
+fi
+echo ""
+
+# Final verification
+if [ "$NEW_SSID" = "$WIFI_SSID" ] && [ "$IP_METHOD" = "manual" ] && [ "$NEW_IP" = "$DETECTED_IP" ]; then
     echo "======================================"
     echo "✓ WiFi Configuration Successful!"
     echo "======================================"
     echo ""
     echo "WiFi SSID: $NEW_SSID"
-    echo "IP Address: $NEW_IP"
-    echo "IP Method: $IP_CONFIG"
+    echo "IP Address: $NEW_IP (STATIC)"
+    echo "Gateway: $DETECTED_GATEWAY"
+    echo "DNS: $STATIC_DNS"
     echo ""
-    echo "Note: SSH connection may disconnect if IP changed."
+    echo "Configuration Features:"
+    echo "  ✓ Static IP (persistent across reboots)"
+    echo "  ✓ Auto-connect enabled"
+    echo "  ✓ Google DNS (8.8.8.8)"
+    echo "  ✓ No manual reboot required"
+    echo ""
+    echo "Note: SSH connection may disconnect briefly."
     echo "Reconnect using: ssh $ACTUAL_USER@$NEW_IP"
     echo ""
 else
     echo "======================================"
-    echo "✗ WiFi Connection Failed"
+    echo "✗ WiFi Configuration Failed"
     echo "======================================"
     echo ""
-    echo "Please check:"
-    echo "- WiFi SSID is correct"
-    echo "- WiFi password is correct"
-    echo "- WiFi network is in range"
+    echo "Verification failed:"
+    echo "  Expected SSID: $WIFI_SSID"
+    echo "  Actual SSID: $NEW_SSID"
+    echo "  Expected IP Method: manual"
+    echo "  Actual IP Method: $IP_METHOD"
+    echo "  Expected IP: $DETECTED_IP"
+    echo "  Actual IP: $NEW_IP"
     echo ""
     exit 1
 fi
