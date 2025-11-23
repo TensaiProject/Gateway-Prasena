@@ -54,8 +54,11 @@ if [ "$SCAN_CHOICE" = "y" ]; then
     echo ""
     echo "[2/4] Scanning WiFi Networks..."
     echo "--------------------------------------"
-    # Add timeout to prevent hang
-    timeout 15 nmcli device wifi list 2>/dev/null || echo "Scan timeout or failed"
+    # Trigger fresh scan (non-blocking)
+    nmcli device wifi rescan 2>/dev/null || true
+    sleep 2
+    # List networks with longer timeout
+    timeout 30 nmcli device wifi list 2>/dev/null || echo "⚠ WiFi scan failed or timed out"
     echo ""
 else
     echo ""
