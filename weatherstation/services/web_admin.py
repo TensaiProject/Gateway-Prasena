@@ -616,10 +616,31 @@ class WebAdminService:
                     except:
                         pass
 
-                    # Check if using static IP (check nmcli connection)
+                    # Check if using static IP (check active connection)
+                    # First try to get active connection name
+                    active_connection = None
+
+                    # Try WiFi first
                     if network_info['wifi']['ssid']:
+                        active_connection = network_info['wifi']['ssid']
+                    else:
+                        # Try Ethernet (Wired connection)
                         result = subprocess.run(
-                            ['nmcli', '-t', '-f', 'ipv4.method', 'connection', 'show', network_info['wifi']['ssid']],
+                            ['nmcli', '-t', '-f', 'NAME,DEVICE', 'connection', 'show', '--active'],
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        if result.returncode == 0:
+                            for line in result.stdout.strip().split('\n'):
+                                if 'eth0' in line or 'Wired' in line:
+                                    active_connection = line.split(':')[0]
+                                    break
+
+                    # Check IP method for active connection
+                    if active_connection:
+                        result = subprocess.run(
+                            ['nmcli', '-t', '-f', 'ipv4.method', 'connection', 'show', active_connection],
                             capture_output=True,
                             text=True,
                             timeout=5
