@@ -715,18 +715,41 @@ class WebAdminService:
                         'error': validation_error
                     }), 400
 
-                # Generate ULID
-                sensor_id = generate_ulid()
+                # Get device info from request
+                sensor_id = device_data.get('device_id')
                 sensor_type = device_data['type']
-                sensor_name = device_data.get('name', f"{sensor_type.capitalize()} Sensor")
+                sensor_name = device_data.get('name')
+                location = device_data.get('location')
                 modbus_address = device_data.get('modbus_address')
+
+                # Validate required fields
+                if not sensor_id:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Device ID is required'
+                    }), 400
+
+                if not sensor_name:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Device name is required'
+                    }), 400
+
+                # Validate ULID format (26 characters, alphanumeric)
+                if len(sensor_id) != 26 or not sensor_id.isalnum():
+                    return jsonify({
+                        'success': False,
+                        'error': 'Invalid Device ID format. Must be 26-character ULID.'
+                    }), 400
 
                 # Register device in database
                 self.db.register_device(
                     sensor_id=sensor_id,
                     sensor_type=sensor_type,
                     sensor_name=sensor_name,
-                    modbus_address=modbus_address
+                    location=location if location else None,
+                    modbus_address=modbus_address,
+                    enabled=True
                 )
 
                 logger.info(f"Device registered: {sensor_id} ({sensor_type})")
@@ -738,6 +761,7 @@ class WebAdminService:
                         'device_id': sensor_id,
                         'device_type': sensor_type,
                         'device_name': sensor_name,
+                        'location': location,
                         'modbus_address': modbus_address
                     }
                 }), 201

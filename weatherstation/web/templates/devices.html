@@ -45,11 +45,23 @@
                     </div>
                 </div>
 
+                <!-- Device ID -->
+                <div class="form-group">
+                    <label for="device-id">Device ID <span style="color: var(--color-danger);">*</span></label>
+                    <input type="text" id="device-id" placeholder="e.g., 01K9RSSBEVE5X1CV7ZGTB46MZP" required>
+                    <span class="form-text">ULID format (26 characters). Each device must have unique ID.</span>
+                </div>
+
                 <!-- Device Name -->
                 <div class="form-group">
-                    <label for="device-name">Device Name (Optional)</label>
-                    <input type="text" id="device-name" placeholder="e.g., Main Battery Monitor">
-                    <span class="form-text">Leave empty for auto-generated name</span>
+                    <label for="device-name">Device Name <span style="color: var(--color-danger);">*</span></label>
+                    <input type="text" id="device-name" placeholder="e.g., Main Battery Monitor" required>
+                </div>
+
+                <!-- Location -->
+                <div class="form-group">
+                    <label for="device-location">Location (Optional)</label>
+                    <input type="text" id="device-location" placeholder="e.g., Panel A, Rooftop">
                 </div>
 
                 <!-- Modbus Address (Battery Only) -->
@@ -287,10 +299,34 @@ function selectAddress(address) {
 // Register device
 document.getElementById('register-btn').addEventListener('click', async () => {
     const deviceType = document.querySelector('input[name="device-type"]:checked').value;
+    const deviceId = document.getElementById('device-id').value.trim();
     const deviceName = document.getElementById('device-name').value.trim();
+    const deviceLocation = document.getElementById('device-location').value.trim();
     const modbusAddress = deviceType === 'battery' ? parseInt(document.getElementById('modbus-address').value) : null;
 
-    // Validate
+    // Validate device ID
+    if (!deviceId) {
+        showNotification('Device ID is required', 'danger');
+        return;
+    }
+
+    if (deviceId.length !== 26) {
+        showNotification('Device ID must be 26 characters (ULID format)', 'danger');
+        return;
+    }
+
+    if (!/^[A-Z0-9]+$/i.test(deviceId)) {
+        showNotification('Device ID must contain only letters and numbers', 'danger');
+        return;
+    }
+
+    // Validate device name
+    if (!deviceName) {
+        showNotification('Device name is required', 'danger');
+        return;
+    }
+
+    // Validate modbus address for battery
     if (deviceType === 'battery' && (!modbusAddress || modbusAddress < 1 || modbusAddress > 247)) {
         showNotification('Please enter valid modbus address (1-247)', 'danger');
         return;
@@ -298,7 +334,9 @@ document.getElementById('register-btn').addEventListener('click', async () => {
 
     const deviceData = {
         type: deviceType,
-        name: deviceName || null,
+        device_id: deviceId,
+        name: deviceName,
+        location: deviceLocation || null,
         modbus_address: modbusAddress
     };
 
