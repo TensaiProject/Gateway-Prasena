@@ -126,8 +126,11 @@ fi
 echo "Connecting to $WIFI_SSID with DHCP..."
 
 if [ -n "$WIFI_PASSWORD" ]; then
-    timeout 60 nmcli device wifi connect "$WIFI_SSID" password "$WIFI_PASSWORD"
+    # Use --private flag for better compatibility with WPA/WPA2 networks
+    # This avoids "key-mgmt property is missing" errors on some WiFi networks
+    timeout 60 nmcli device wifi connect "$WIFI_SSID" password "$WIFI_PASSWORD" --private
 else
+    # Open network (no password)
     timeout 60 nmcli device wifi connect "$WIFI_SSID"
 fi
 
