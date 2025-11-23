@@ -87,7 +87,7 @@ def run_web_service(config_path: str):
     )
 
     db_path = config.get('database', {}).get('path', './data/weatherstation.db')
-    service = WebAdminService(config, db_path)
+    service = WebAdminService(config, db_path, config_path=config_path)
     service.run()
 
 
@@ -279,7 +279,7 @@ def run_service(service: str, config: str, test_mode: bool = False):
             cfg = yaml.safe_load(f)
 
         db_path = cfg.get('database', {}).get('path', './data/weatherstation.db')
-        service = WebAdminService(cfg, db_path)
+        service = WebAdminService(cfg, db_path, config_path=config)
         service.run()
         return 0
 
