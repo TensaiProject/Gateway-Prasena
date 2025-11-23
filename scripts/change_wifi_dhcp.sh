@@ -111,14 +111,18 @@ echo "SSID: $WIFI_SSID"
 echo "IP Method: DHCP (automatic)"
 echo ""
 
-# Disconnect from current WiFi if connected
-if [ "$CURRENT_SSID" != "Not connected" ]; then
-    echo "Disconnecting from current WiFi: $CURRENT_SSID"
-    nmcli connection down "$CURRENT_SSID" 2>/dev/null || true
-    sleep 1
+# Note: We DON'T disconnect old WiFi first!
+# nmcli device wifi connect will automatically switch WiFi
+# This prevents SSH disconnection before new WiFi is connected
+
+if [ "$CURRENT_SSID" != "Not connected" ] && [ "$CURRENT_SSID" != "$WIFI_SSID" ]; then
+    echo "Switching from WiFi: $CURRENT_SSID → $WIFI_SSID"
+else
+    echo "Connecting to WiFi: $WIFI_SSID"
 fi
 
 # Connect to new WiFi with DHCP mode (with timeout)
+# NetworkManager will automatically disconnect old WiFi after new connection succeeds
 echo "Connecting to $WIFI_SSID with DHCP..."
 
 if [ -n "$WIFI_PASSWORD" ]; then
@@ -143,8 +147,9 @@ if [ $CONNECT_RESULT -eq 124 ]; then
     echo "  - WiFi using 5GHz band (Raspi may only support 2.4GHz)"
     echo "  - WiFi router not responding"
     echo ""
-    echo "Reconnecting to old WiFi: $CURRENT_SSID"
-    nmcli connection up "$CURRENT_SSID" 2>/dev/null || true
+    if [ "$CURRENT_SSID" != "Not connected" ]; then
+        echo "Note: Your current WiFi ($CURRENT_SSID) should still be connected."
+    fi
     exit 1
 elif [ $CONNECT_RESULT -ne 0 ]; then
     echo ""
@@ -154,8 +159,9 @@ elif [ $CONNECT_RESULT -ne 0 ]; then
     echo ""
     echo "Failed to connect to WiFi: $WIFI_SSID"
     echo ""
-    echo "Reconnecting to old WiFi: $CURRENT_SSID"
-    nmcli connection up "$CURRENT_SSID" 2>/dev/null || true
+    if [ "$CURRENT_SSID" != "Not connected" ]; then
+        echo "Note: Your current WiFi ($CURRENT_SSID) should still be connected."
+    fi
     exit 1
 fi
 

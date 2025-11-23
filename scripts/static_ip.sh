@@ -32,7 +32,7 @@ if [ -z "$WIFI_INTERFACE" ]; then
     exit 1
 fi
 
-# Get current SSID
+# Get current SSID (for display only)
 CURRENT_SSID=$(iwgetid -r 2>/dev/null || echo "")
 
 if [ -z "$CURRENT_SSID" ]; then
@@ -41,11 +41,21 @@ if [ -z "$CURRENT_SSID" ]; then
     exit 1
 fi
 
+# Get ACTUAL active connection name (NOT SSID!)
+# This is the key fix: connection name might be different from SSID
+CONNECTION_NAME=$(nmcli -t -f NAME,DEVICE connection show --active | grep ":$WIFI_INTERFACE$" | cut -d: -f1)
+
+if [ -z "$CONNECTION_NAME" ]; then
+    echo "ERROR: No active connection found for $WIFI_INTERFACE!"
+    echo "Please ensure WiFi is connected."
+    exit 1
+fi
+
 # Get current IP configuration
 CURRENT_IP=$(ip -4 addr show "$WIFI_INTERFACE" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1)
 CURRENT_GATEWAY=$(ip route | grep default | grep "$WIFI_INTERFACE" | awk '{print $3}' | head -n1)
 CURRENT_CIDR=$(ip -4 addr show "$WIFI_INTERFACE" | grep -oP '(?<=inet\s)\d+(\.\d+){3}/\d+' | cut -d/ -f2 | head -n1)
-CURRENT_METHOD=$(nmcli -t -f ipv4.method connection show "$CURRENT_SSID" | cut -d: -f2)
+CURRENT_METHOD=$(nmcli -t -f ipv4.method connection show "$CONNECTION_NAME" | cut -d: -f2)
 
 if [ -z "$CURRENT_IP" ]; then
     echo "ERROR: Failed to detect current IP address!"
@@ -70,6 +80,7 @@ case "$CURRENT_CIDR" in
 esac
 
 echo "WiFi SSID: $CURRENT_SSID"
+echo "Connection Name: $CONNECTION_NAME"
 echo "WiFi Interface: $WIFI_INTERFACE"
 echo "Current IP: $CURRENT_IP"
 echo "Current Gateway: $CURRENT_GATEWAY"
@@ -140,7 +151,8 @@ STATIC_DNS="8.8.8.8"
 echo "Converting to Static IP..."
 
 # Modify connection with all settings at once (atomic operation)
-nmcli connection modify "$CURRENT_SSID" \
+# Use CONNECTION_NAME (not SSID) because they might be different!
+nmcli connection modify "$CONNECTION_NAME" \
     ipv4.method manual \
     ipv4.addresses "${CURRENT_IP}/${CURRENT_CIDR}" \
     ipv4.gateway "$CURRENT_GATEWAY" \
@@ -153,12 +165,12 @@ sync
 echo "✓ Configuration saved to disk"
 
 # Verify config saved
-CONFIG_FILE="/etc/NetworkManager/system-connections/${CURRENT_SSID}.nmconnection"
+CONFIG_FILE="/etc/NetworkManager/system-connections/${CONNECTION_NAME}.nmconnection"
 if [ -f "$CONFIG_FILE" ]; then
     if grep -q "method=manual" "$CONFIG_FILE" 2>/dev/null; then
         echo "✓ Static config verified on disk"
     else
-        CONFIG_FILE="/etc/NetworkManager/system-connections/${CURRENT_SSID}"
+        CONFIG_FILE="/etc/NetworkManager/system-connections/${CONNECTION_NAME}"
         if [ -f "$CONFIG_FILE" ] && grep -q "method=manual" "$CONFIG_FILE" 2>/dev/null; then
             echo "✓ Static config verified on disk"
         else
@@ -171,9 +183,9 @@ fi
 
 # Restart connection to apply static IP
 echo "Restarting connection to apply Static IP..."
-nmcli connection down "$CURRENT_SSID" 2>/dev/null || true
+nmcli connection down "$CONNECTION_NAME" 2>/dev/null || true
 sleep 2
-nmcli connection up "$CURRENT_SSID"
+nmcli connection up "$CONNECTION_NAME"
 
 # Wait for connection
 sleep 3
@@ -183,7 +195,7 @@ echo ""
 
 # Verify static IP applied
 NEW_IP=$(ip -4 addr show "$WIFI_INTERFACE" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1)
-IP_METHOD=$(nmcli -t -f ipv4.method connection show "$CURRENT_SSID" | cut -d: -f2)
+IP_METHOD=$(nmcli -t -f ipv4.method connection show "$CONNECTION_NAME" | cut -d: -f2)
 
 # Test internet again
 echo "Verifying internet connectivity..."
