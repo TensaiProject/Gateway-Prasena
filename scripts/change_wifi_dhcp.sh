@@ -129,15 +129,34 @@ fi
 echo "Connecting to $WIFI_SSID with DHCP..."
 
 if [ -n "$WIFI_PASSWORD" ]; then
-    # Connect to secured WiFi (auto-detects WPA/WPA2/WPA3)
-    # NetworkManager will automatically create a private connection profile
-    timeout 60 nmcli device wifi connect "$WIFI_SSID" password "$WIFI_PASSWORD"
+    # Try modern command first (auto-detects WPA)
+    timeout 60 nmcli device wifi connect "$WIFI_SSID" password "$WIFI_PASSWORD" 2>/tmp/wifi_error.log
+    CONNECT_RESULT=$?
+
+    # If failed with key-mgmt error, use explicit WPA-PSK configuration
+    if [ $CONNECT_RESULT -ne 0 ] && grep -q "key-mgmt" /tmp/wifi_error.log 2>/dev/null; then
+        echo "⚠ Auto-detection failed, using explicit WPA-PSK config..."
+        # Delete failed connection attempt if exists
+        nmcli connection delete "$WIFI_SSID" 2>/dev/null || true
+        # Create connection with explicit WPA-PSK settings
+        timeout 60 nmcli connection add \
+            type wifi \
+            con-name "$WIFI_SSID" \
+            ifname "$WIFI_INTERFACE" \
+            ssid "$WIFI_SSID" \
+            wifi-sec.key-mgmt wpa-psk \
+            wifi-sec.psk "$WIFI_PASSWORD"
+        # Activate the connection
+        timeout 60 nmcli connection up "$WIFI_SSID"
+        CONNECT_RESULT=$?
+    fi
 else
     # Open network (no password)
     timeout 60 nmcli device wifi connect "$WIFI_SSID"
+    CONNECT_RESULT=$?
 fi
 
-CONNECT_RESULT=$?
+rm -f /tmp/wifi_error.log
 
 if [ $CONNECT_RESULT -eq 124 ]; then
     echo ""
