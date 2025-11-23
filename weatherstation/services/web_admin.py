@@ -34,13 +34,14 @@ class WebAdminService:
     - Real-time data display
     """
 
-    def __init__(self, config: Dict[str, Any], db_path: str = './data/weatherstation.db'):
+    def __init__(self, config: Dict[str, Any], db_path: str = './data/weatherstation.db', config_path: str = None):
         """
         Initialize Web Admin Service
 
         Args:
             config: System configuration dictionary
             db_path: Path to SQLite database
+            config_path: Path to system config YAML file (optional, auto-detected if not provided)
         """
         self.config = config
         self.db = DatabaseManager(db_path)
@@ -57,11 +58,15 @@ class WebAdminService:
         self.idle_check_thread = None
 
         # Config file path
-        self.config_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            'config',
-            'system_config.yaml'
-        )
+        if config_path:
+            self.config_path = config_path
+        else:
+            # Auto-detect: assume we're in weatherstation/services/web_admin.py
+            self.config_path = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                'config',
+                'system_config.yaml'
+            )
 
         # Flask app setup
         self.app = Flask(
