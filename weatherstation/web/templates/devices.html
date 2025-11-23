@@ -176,12 +176,21 @@ function renderDevices() {
         const isBattery = device.device_type === 'battery';
         const badgeClass = isBattery ? 'badge-success' : 'badge-info';
         const typeLabel = isBattery ? 'Battery' : 'Weather';
+        const typeIcon = isBattery ? '🔋' : '🌤️';
+        const statusColor = device.enabled ? 'var(--color-success)' : 'var(--color-muted)';
+        const statusText = device.enabled ? 'Enabled' : 'Disabled';
 
         html += `
             <div class="device-card">
-                <div class="device-card-header">
-                    <span>${device.device_name || typeLabel.toUpperCase()}</span>
-                    <span class="badge ${badgeClass}">${typeLabel}</span>
+                <div class="device-card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span style="font-size: 20px; margin-right: 8px;">${typeIcon}</span>
+                        <span>${device.device_name || typeLabel.toUpperCase()}</span>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <span class="badge ${badgeClass}">${typeLabel}</span>
+                        <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; background: ${statusColor}20; color: ${statusColor}; font-size: 11px;">${statusText}</span>
+                    </div>
                 </div>
                 <div class="device-card-body">
                     <dl>
@@ -191,11 +200,18 @@ function renderDevices() {
                             <dt>Modbus Address</dt>
                             <dd>${device.modbus_address || 'N/A'}</dd>
                         ` : ''}
+                        ${device.location ? `
+                            <dt>Location</dt>
+                            <dd class="text-xs">${device.location}</dd>
+                        ` : ''}
                         <dt>Registered</dt>
                         <dd class="text-xs">${new Date(device.created_at).toLocaleString()}</dd>
                     </dl>
                 </div>
-                <div class="device-card-footer">
+                <div class="device-card-footer" style="display: flex; gap: 8px;">
+                    <button class="btn btn-sm ${device.enabled ? 'btn-ghost' : 'btn-success'}" onclick="toggleDevice('${device.device_id}', ${!device.enabled})">
+                        ${device.enabled ? 'Disable' : 'Enable'}
+                    </button>
                     <button class="btn btn-sm btn-danger" onclick="confirmDelete('${device.device_id}')">Delete</button>
                 </div>
             </div>
@@ -317,6 +333,29 @@ document.getElementById('register-btn').addEventListener('click', async () => {
         btn.textContent = originalText;
     }
 });
+
+// Toggle device enabled/disabled
+async function toggleDevice(deviceId, enabled) {
+    try {
+        const response = await fetch(`/api/devices/${deviceId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showNotification(`Device ${enabled ? 'enabled' : 'disabled'} successfully`, 'success');
+            loadDevices();
+        } else {
+            showNotification('Update failed: ' + result.error, 'danger');
+        }
+    } catch (error) {
+        console.error('Error toggling device:', error);
+        showNotification('Error updating device', 'danger');
+    }
+}
 
 // Confirm delete
 function confirmDelete(deviceId) {
