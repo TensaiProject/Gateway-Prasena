@@ -126,9 +126,9 @@ fi
 echo "Connecting to $WIFI_SSID with DHCP..."
 
 if [ -n "$WIFI_PASSWORD" ]; then
-    # Use --private flag for better compatibility with WPA/WPA2 networks
-    # This avoids "key-mgmt property is missing" errors on some WiFi networks
-    timeout 60 nmcli device wifi connect "$WIFI_SSID" password "$WIFI_PASSWORD" --private
+    # Connect to secured WiFi (auto-detects WPA/WPA2/WPA3)
+    # NetworkManager will automatically create a private connection profile
+    timeout 60 nmcli device wifi connect "$WIFI_SSID" password "$WIFI_PASSWORD"
 else
     # Open network (no password)
     timeout 60 nmcli device wifi connect "$WIFI_SSID"
