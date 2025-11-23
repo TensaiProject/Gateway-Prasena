@@ -228,18 +228,6 @@
             </div>
         </div>
 
-        <!-- Upload Service Configuration -->
-        <div class="panel">
-            <div class="panel-header">Upload Service Settings</div>
-            <div class="panel-body">
-                <div class="form-group">
-                    <label for="upload-interval">Upload Interval (seconds)</label>
-                    <input type="number" id="upload-interval" min="10" max="3600" required>
-                    <span class="form-text">Range: 10-3600s. How often to upload data to remote server.</span>
-                </div>
-            </div>
-        </div>
-
         <!-- Database Configuration -->
         <div class="panel">
             <div class="panel-header">Database Settings</div>
@@ -294,11 +282,6 @@
                         <td class="cell-mono">mqtt.poll_interval</td>
                         <td class="cell-numeric">5s</td>
                         <td class="text-sm">Database polling frequency</td>
-                    </tr>
-                    <tr>
-                        <td class="cell-mono">upload.interval</td>
-                        <td class="cell-numeric">60s</td>
-                        <td class="text-sm">Cloud upload frequency</td>
                     </tr>
                 </tbody>
             </table>
@@ -363,7 +346,6 @@ function populateIntervalsForm(intervals) {
     document.getElementById('battery-aggregation-window').value = intervals.battery_sensors.aggregation_window;
     document.getElementById('mqtt-poll-interval').value = intervals.mqtt.publisher.poll_interval;
     document.getElementById('mqtt-batch-size').value = intervals.mqtt.publisher.batch_size;
-    document.getElementById('upload-interval').value = intervals.upload.interval;
     document.getElementById('database-backup-interval').value = intervals.database.backup_interval;
 }
 
@@ -399,9 +381,6 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
                 poll_interval: parseInt(document.getElementById('mqtt-poll-interval').value),
                 batch_size: parseInt(document.getElementById('mqtt-batch-size').value)
             }
-        },
-        upload: {
-            interval: parseInt(document.getElementById('upload-interval').value)
         },
         database: {
             backup_interval: parseInt(document.getElementById('database-backup-interval').value)

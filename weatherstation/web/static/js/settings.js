@@ -287,11 +287,6 @@ async function loadSettings() {
                 document.getElementById('mqtt-batch-size').value = data.mqtt.publisher.batch_size || 10;
             }
 
-            // Upload service
-            if (data.upload) {
-                document.getElementById('upload-interval').value = data.upload.interval || 60;
-            }
-
             // Database
             if (data.database) {
                 document.getElementById('database-backup-interval').value = data.database.backup_interval || 86400;
