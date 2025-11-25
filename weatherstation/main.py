@@ -295,6 +295,7 @@ def run_service(service: str, config: str, test_mode: bool = False):
         logger.info("  - Battery Sensor Reader")
         logger.info("  - Weather Station Receiver")
         logger.info("  - MQTT Publisher (real-time to EMQX broker)")
+        logger.info("  - Upload Service (batch upload to API)")
         logger.info("")
         logger.info("Web Admin (on-demand via socket activation):")
         logger.info("  Enable: sudo systemctl enable --now web-admin.socket")
@@ -313,15 +314,12 @@ def run_service(service: str, config: str, test_mode: bool = False):
             auto_restart=True
         )
 
-        # Upload Service disabled - not used (MQTT-only deployment)
-        # System uses MQTT as primary data transport to EMQX broker
-        # Uncomment below if HTTP upload to secondary server is needed
-        # manager.register_service(
-        #     name='upload',
-        #     target=run_upload_service,
-        #     args=(config,),
-        #     auto_restart=True
-        # )
+        manager.register_service(
+            name='upload',
+            target=run_upload_service,
+            args=(config,),
+            auto_restart=True
+        )
 
         manager.register_service(
             name='weather',

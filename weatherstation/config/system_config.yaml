@@ -42,12 +42,12 @@ weather_station:
   protocol: ecowitt
   # sensor_id now comes from database (register via web admin)
 upload:
-  enabled: false
+  enabled: true
   interval: 60
   batch_size: 100
   max_retry: 5
   retry_interval: 30
-  main_server_url: http://your-main-server.com/api/data
+  main_server_url: https://api.prasenaenergy.com/dashboard/readings
   api_key: your_api_key_here
   timeout: 30
 api:
