@@ -1,0 +1,151 @@
+# Weather Station Gateway - Configuration Example
+# This file is for REFERENCE/DOCUMENTATION only
+# Actual config is auto-generated at: weatherstation/config/system_config.yaml
+#
+# Fresh installation:
+#   - Run: scripts/install.sh
+#   - Config will be auto-generated with detected hostname
+#   - Edit: mqtt.password and upload.api_key
+#
+# Manual setup:
+#   1. Copy this file: cp system_config.yaml.example system_config.yaml
+#   2. Edit required fields (marked with ⚠️)
+#   3. Edit optional fields as needed
+
+# ============================================================================
+# SYSTEM SETTINGS
+# ============================================================================
+system:
+  name: Weather Station Local Server
+  location: Your Location  # Optional: Physical location
+  timezone: Asia/Jakarta   # Timezone for timestamps
+
+# ============================================================================
+# DATABASE SETTINGS
+# ============================================================================
+database:
+  path: ./data/weatherstation.db       # SQLite database path (auto-created)
+  backup_enabled: true                 # Enable periodic backups
+  backup_interval: 86400               # Backup interval in seconds (24h)
+  auto_cleanup_enabled: true           # Auto-delete old uploaded data
+  auto_cleanup_days: 1                 # Keep uploaded data for N days
+
+# ============================================================================
+# MQTT BROKER SETTINGS
+# ⚠️ REQUIRED: Change mqtt.password before deployment
+# ============================================================================
+mqtt:
+  protocol: tcp                                      # Protocol: tcp or wss
+  broker_url: mqtt://emqx.prasenaenergy.com:1883    # Full broker URL
+  broker_host: emqx.prasenaenergy.com               # Broker hostname
+  broker_port: 1883                                  # Broker port
+  username: prasena                                  # MQTT username
+  password: CHANGE_ME                                # ⚠️ REQUIRED: Change this!
+  qos: 1                                             # Quality of Service (0, 1, 2)
+  clean_session: true                                # Clean session on connect
+  keepalive: 60                                      # Keepalive interval (seconds)
+  reconnect_delay: 5                                 # Reconnect delay on disconnect
+
+  # Client ID (auto-generated from hostname if not set)
+  # Uncomment to override: client_id: gateway_location_A
+  # Format: gateway_{hostname}
+  # Example: gateway_weatherstation1, gateway_raspberrypi
+
+  publisher:
+    poll_interval: 5     # Poll database every N seconds
+    batch_size: 10       # Max records per poll
+
+  topics:
+    sensor_data: prasena/sensors            # Base topic for sensor data
+    weather_data: prasena/sensors/weather   # Weather station data
+    battery_data: prasena/sensors/battery   # Battery sensor data
+    system_status: prasena/system/status    # System status
+    control: prasena/control/#              # Control commands (subscribe)
+
+# ============================================================================
+# BATTERY SENSORS (RS485/Modbus)
+# ============================================================================
+battery_sensors:
+  enabled: true           # Enable battery sensor polling
+  poll_interval: 1        # Poll interval in seconds
+  sampling_rate: 1        # Samples per poll
+  aggregation_window: 60  # Aggregate samples over N seconds
+
+# ============================================================================
+# WEATHER STATION (Ecowitt Protocol)
+# ============================================================================
+weather_station:
+  enabled: true      # Enable weather receiver HTTP server
+  http_port: 5001    # HTTP port for Ecowitt station
+  protocol: ecowitt  # Protocol: ecowitt (HTTP GET with query params)
+
+  # Sensor ID is auto-registered from database (via web admin)
+  # Ecowitt station sends data via: GET http://gateway-ip:5001/data/report/
+  # Dynamic field parsing: all fields stored automatically
+
+# ============================================================================
+# UPLOAD SERVICE (Batch HTTP Upload to API)
+# ⚠️ REQUIRED: Change upload.api_key before deployment
+# ============================================================================
+upload:
+  enabled: true                # Enable upload service
+  interval: 60                 # Upload interval in seconds
+  batch_size: 100              # Max records per batch
+  max_retry: 5                 # Max retry attempts on failure
+  retry_interval: 30           # Retry delay in seconds
+  timeout: 30                  # HTTP request timeout
+
+  # API endpoint and authentication
+  main_server_url: https://api.prasenaenergy.com/dashboard/readings
+  api_key: CHANGE_ME           # ⚠️ REQUIRED: Get API key from admin
+
+  # Upload format: POST /dashboard/readings
+  # Payload: [{"data": {...}, "sensor_id": "...", "timestamp": "..."}]
+  # Header: Authorization: Bearer {api_key}
+
+# ============================================================================
+# REST API (Local HTTP API)
+# ============================================================================
+api:
+  enabled: true       # Enable local REST API
+  host: 0.0.0.0       # Listen on all interfaces
+  port: 5000          # API port
+  debug: false        # Debug mode (dev only)
+  cors_enabled: true  # Enable CORS
+  cors_origins:
+    - '*'             # Allow all origins (restrict in production)
+
+# ============================================================================
+# WEB ADMIN (Socket Activation Recommended)
+# ============================================================================
+web_admin:
+  enabled: false      # Disable (use systemd socket activation instead)
+  host: 0.0.0.0       # Listen on all interfaces
+  port: 8080          # Web admin port
+  debug: false        # Debug mode (dev only)
+
+  # Socket activation (recommended):
+  #   sudo systemctl enable --now web-admin.socket
+  #   Access: http://gateway-ip:8080
+
+# ============================================================================
+# LOGGING
+# ============================================================================
+logging:
+  level: INFO                                # Log level: DEBUG, INFO, WARNING, ERROR
+  log_to_file: true                          # Enable file logging
+  log_file: ./logs/system.log                # Main log file
+  weather_log_file: ./logs/weather_receiver.log   # Weather receiver log
+  mqtt_log_file: ./logs/mqtt_publisher.log        # MQTT publisher log
+  max_file_size: 10485760                    # Max file size (10MB)
+  backup_count: 5                            # Keep N backup logs
+
+# ============================================================================
+# DEVICE DISCOVERY (Optional)
+# ============================================================================
+discovery:
+  enabled: false           # Enable automatic device discovery
+  scan_interval: 3600      # Scan interval in seconds (1 hour)
+  pzem_address_range:      # Modbus address range to scan
+    - 1
+    - 20

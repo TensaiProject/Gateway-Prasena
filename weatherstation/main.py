@@ -232,6 +232,20 @@ def register_device_interactive():
 
 def run_service(service: str, config: str, test_mode: bool = False):
     """Run specified service"""
+    from weatherstation.config.config_validator import load_and_validate_config, ConfigValidationError
+
+    # Validate configuration before starting any service
+    try:
+        logger.info(f"Loading configuration: {config}")
+        validated_config = load_and_validate_config(config)
+        logger.info("✓ Configuration validated successfully")
+    except (FileNotFoundError, ConfigValidationError) as e:
+        logger.error(f"Configuration error:\n{e}")
+        logger.error("Fix configuration issues before starting services")
+        return 1
+    except Exception as e:
+        logger.error(f"Unexpected error loading config: {e}")
+        return 1
 
     if service == 'battery':
         from weatherstation.sensors.battery_reader import main as battery_main
