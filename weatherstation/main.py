@@ -232,6 +232,20 @@ def register_device_interactive():
 
 def run_service(service: str, config: str, test_mode: bool = False):
     """Run specified service"""
+    from weatherstation.config.config_validator import load_and_validate_config, ConfigValidationError
+
+    # Validate configuration before starting any service
+    try:
+        logger.info(f"Loading configuration: {config}")
+        validated_config = load_and_validate_config(config)
+        logger.info("✓ Configuration validated successfully")
+    except (FileNotFoundError, ConfigValidationError) as e:
+        logger.error(f"Configuration error:\n{e}")
+        logger.error("Fix configuration issues before starting services")
+        return 1
+    except Exception as e:
+        logger.error(f"Unexpected error loading config: {e}")
+        return 1
 
     if service == 'battery':
         from weatherstation.sensors.battery_reader import main as battery_main
@@ -295,6 +309,7 @@ def run_service(service: str, config: str, test_mode: bool = False):
         logger.info("  - Battery Sensor Reader")
         logger.info("  - Weather Station Receiver")
         logger.info("  - MQTT Publisher (real-time to EMQX broker)")
+        logger.info("  - Upload Service (batch upload to API)")
         logger.info("")
         logger.info("Web Admin (on-demand via socket activation):")
         logger.info("  Enable: sudo systemctl enable --now web-admin.socket")
@@ -313,15 +328,12 @@ def run_service(service: str, config: str, test_mode: bool = False):
             auto_restart=True
         )
 
-        # Upload Service disabled - not used (MQTT-only deployment)
-        # System uses MQTT as primary data transport to EMQX broker
-        # Uncomment below if HTTP upload to secondary server is needed
-        # manager.register_service(
-        #     name='upload',
-        #     target=run_upload_service,
-        #     args=(config,),
-        #     auto_restart=True
-        # )
+        manager.register_service(
+            name='upload',
+            target=run_upload_service,
+            args=(config,),
+            auto_restart=True
+        )
 
         manager.register_service(
             name='weather',

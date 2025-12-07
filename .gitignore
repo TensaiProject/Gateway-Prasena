@@ -53,9 +53,10 @@ data/
 .DS_Store
 Thumbs.db
 
-# Config (sensitive)
+# Config (sensitive - auto-generated, user-specific)
 *.env
 .env.local
+weatherstation/config/system_config.yaml
 
 # Claude Code
 .claude/

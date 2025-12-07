@@ -117,16 +117,16 @@ class UploadService:
 
             logger.info(f"Uploading {len(pending)} {sensor_type} records...")
 
-            # Build payload
+            # Build payload - transform to API format (array only)
             batch_id = f"{sensor_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            payload = {
-                'source': 'raspberry_pi_weather_station',
-                'data_type': sensor_type,
-                'timestamp': datetime.now().isoformat(),
-                'batch_id': batch_id,
-                'device_count': len(set(r['sensor_id'] for r in pending)),
-                'records': pending
-            }
+            payload = [
+                {
+                    'data': record['data'],
+                    'sensor_id': record['sensor_id'],
+                    'timestamp': record['timestamp']
+                }
+                for record in pending
+            ]
 
             # Send to server
             headers = {

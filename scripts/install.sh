@@ -88,7 +88,7 @@ pip install -r requirements.txt
 
 # Step 8: Create data and log directories
 echo ""
-echo "[8/8] Creating data and log directories..."
+echo "[8/9] Creating data and log directories..."
 mkdir -p "$INSTALL_DIR/data"
 mkdir -p "$INSTALL_DIR/logs"
 
@@ -97,17 +97,76 @@ chmod 755 "$INSTALL_DIR"
 chmod 755 "$INSTALL_DIR/data"
 chmod 755 "$INSTALL_DIR/logs"
 
+# Step 9: Generate configuration file
+echo ""
+echo "[9/9] Configuring system..."
+CONFIG_FILE="$INSTALL_DIR/weatherstation/config/system_config.yaml"
+EXAMPLE_FILE="$INSTALL_DIR/weatherstation/config/system_config.yaml.example"
+
+if [ -f "$CONFIG_FILE" ]; then
+    echo "✓ Config file already exists: $CONFIG_FILE"
+
+    # Validate existing config
+    echo "  Validating existing configuration..."
+    if python3 -c "import yaml; yaml.safe_load(open('$CONFIG_FILE'))" 2>/dev/null; then
+        echo "  ✓ Config valid, keeping existing settings"
+        CONFIG_NEEDS_EDIT=0
+    else
+        echo "  ⚠️  WARNING: Existing config has YAML syntax errors!"
+        echo "  Creating backup: $CONFIG_FILE.backup"
+        cp "$CONFIG_FILE" "$CONFIG_FILE.backup.$(date +%Y%m%d_%H%M%S)"
+        echo "  Regenerating config..."
+        REGENERATE_CONFIG=1
+    fi
+else
+    echo "Config not found, generating new configuration..."
+    REGENERATE_CONFIG=1
+fi
+
+if [ "${REGENERATE_CONFIG:-0}" -eq 1 ]; then
+    # Generate config via Python
+    if python3 -m weatherstation.config.config_generator "$CONFIG_FILE" 2>&1; then
+        echo "✓ Config generated successfully: $CONFIG_FILE"
+        CONFIG_NEEDS_EDIT=1
+    else
+        echo "❌ ERROR: Config generation failed"
+        echo ""
+        echo "Fallback option:"
+        echo "  cp $EXAMPLE_FILE $CONFIG_FILE"
+        echo "  nano $CONFIG_FILE"
+        echo ""
+        exit 1
+    fi
+fi
+
 echo ""
 echo "======================================"
 echo "Installation Complete!"
 echo "======================================"
 echo ""
+
+if [ "${CONFIG_NEEDS_EDIT:-0}" -eq 1 ]; then
+    echo "⚠️  IMPORTANT: Edit configuration before starting:"
+    echo ""
+    echo "  nano $CONFIG_FILE"
+    echo ""
+    echo "  Required changes:"
+    echo "    1. mqtt.password (currently: CHANGE_ME)"
+    echo "    2. upload.api_key (currently: CHANGE_ME)"
+    echo ""
+    echo "  Optional changes:"
+    echo "    - system.location (physical location)"
+    echo ""
+fi
+
 echo "Next steps:"
-echo "1. Update configuration: nano $INSTALL_DIR/weatherstation/config/system_config.yaml"
-echo "2. Initialize database: cd $INSTALL_DIR && $VENV_DIR/bin/python3 -m weatherstation.main --init-db"
-echo "3. Register devices: cd $INSTALL_DIR && $VENV_DIR/bin/python3 -m weatherstation.main --register-device"
-echo "4. Install systemd service: sudo bash $INSTALL_DIR/scripts/setup_systemd.sh"
+echo "1. Edit configuration (if needed): nano $CONFIG_FILE"
+echo "2. Validate configuration: $VENV_DIR/bin/python3 -m weatherstation.config.config_validator $CONFIG_FILE"
+echo "3. Initialize database: cd $INSTALL_DIR && $VENV_DIR/bin/python3 -m weatherstation.main --init-db"
+echo "4. Register devices: cd $INSTALL_DIR && $VENV_DIR/bin/python3 -m weatherstation.main --register-device"
+echo "5. Install systemd service: sudo bash $INSTALL_DIR/scripts/setup_systemd.sh"
 echo ""
 echo "Installation directory: $INSTALL_DIR"
 echo "Virtual environment: $VENV_DIR"
+echo "Configuration: $CONFIG_FILE"
 echo ""
