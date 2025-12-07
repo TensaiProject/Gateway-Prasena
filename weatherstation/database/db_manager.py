@@ -1086,6 +1086,21 @@ class DatabaseManager:
                 extra_info=results
             )
 
+        # VACUUM database to reclaim disk space (only if data was actually deleted)
+        if not dry_run and results['total_records_deleted'] > 0:
+            try:
+                logger.info("Running VACUUM to reclaim disk space...")
+                with self.get_connection() as conn:
+                    conn.execute("VACUUM")
+                logger.info("✓ VACUUM completed - disk space reclaimed")
+                results['vacuum_executed'] = True
+            except Exception as e:
+                logger.error(f"Failed to VACUUM database: {e}")
+                results['vacuum_executed'] = False
+                results['vacuum_error'] = str(e)
+        else:
+            results['vacuum_executed'] = False
+
         logger.info("=" * 60)
         logger.info(f"Cleanup complete: {results['total_records_deleted']} records deleted")
         logger.info("=" * 60)
