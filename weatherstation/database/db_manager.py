@@ -819,6 +819,112 @@ class DatabaseManager:
     # DATA CLEANUP
     # ============================================================================
 
+    def _cleanup_sensor_data_table(
+        self,
+        days_old: int = 7,
+        dry_run: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Cleanup sensor_data table (schema v2.0)
+        Deletes uploaded records older than specified days
+
+        Args:
+            days_old: Delete data older than this many days
+            dry_run: If True, only count records without deleting
+
+        Returns:
+            Dictionary with deletion statistics
+        """
+        try:
+            with self.get_connection() as conn:
+                # Check if sensor_data table exists
+                table_check = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='sensor_data'"
+                ).fetchone()
+
+                if not table_check:
+                    logger.debug("sensor_data table does not exist, skipping")
+                    return {
+                        'table': 'sensor_data',
+                        'records_deleted': 0,
+                        'dry_run': dry_run,
+                        'skipped': True
+                    }
+
+                # Count records to be deleted
+                count_query = """
+                    SELECT COUNT(*) as count
+                    FROM sensor_data
+                    WHERE uploaded = 1
+                    AND timestamp < datetime('now', '-' || ? || ' days')
+                """
+                count_row = conn.execute(count_query, (days_old,)).fetchone()
+                records_count = count_row['count'] if count_row else 0
+
+                if records_count == 0:
+                    logger.info(f"No sensor_data records to delete (older than {days_old} days)")
+                    return {
+                        'table': 'sensor_data',
+                        'records_deleted': 0,
+                        'dry_run': dry_run
+                    }
+
+                # Get timestamp range and breakdown by sensor type
+                range_query = """
+                    SELECT
+                        MIN(sd.timestamp) as oldest,
+                        MAX(sd.timestamp) as newest,
+                        d.sensor_type,
+                        COUNT(*) as count
+                    FROM sensor_data sd
+                    JOIN devices d ON sd.device_id = d.id
+                    WHERE sd.uploaded = 1
+                    AND sd.timestamp < datetime('now', '-' || ? || ' days')
+                    GROUP BY d.sensor_type
+                """
+                range_rows = conn.execute(range_query, (days_old,)).fetchall()
+
+                # Log breakdown by sensor type
+                breakdown = {}
+                for row in range_rows:
+                    sensor_type = row['sensor_type']
+                    breakdown[sensor_type] = row['count']
+                    logger.info(f"  {sensor_type}: {row['count']} records (oldest: {row['oldest']})")
+
+                if not dry_run:
+                    # Actually delete the records
+                    delete_query = """
+                        DELETE FROM sensor_data
+                        WHERE uploaded = 1
+                        AND timestamp < datetime('now', '-' || ? || ' days')
+                    """
+                    conn.execute(delete_query, (days_old,))
+                    logger.info(
+                        f"Deleted {records_count} sensor_data records "
+                        f"older than {days_old} days"
+                    )
+                else:
+                    logger.info(
+                        f"DRY RUN: Would delete {records_count} sensor_data records "
+                        f"older than {days_old} days"
+                    )
+
+                return {
+                    'table': 'sensor_data',
+                    'records_deleted': records_count,
+                    'days_old': days_old,
+                    'breakdown_by_sensor_type': breakdown,
+                    'dry_run': dry_run
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to cleanup sensor_data table: {e}", exc_info=True)
+            return {
+                'error': str(e),
+                'table': 'sensor_data',
+                'records_deleted': 0
+            }
+
     def delete_uploaded_data(
         self,
         data_type: str,
@@ -958,11 +1064,18 @@ class DatabaseManager:
             'days_old': days_old
         }
 
-        # Cleanup each data type (legacy tables)
+        # Cleanup sensor_data table (schema v2.0 - universal table)
+        sensor_data_result = self._cleanup_sensor_data_table(days_old, dry_run)
+        results['data_types']['sensor_data'] = sensor_data_result
+        results['total_records_deleted'] += sensor_data_result.get('records_deleted', 0)
+
+        # Cleanup legacy tables (if they exist)
         for data_type in ['pzem', 'weather', 'battery']:
             result = self.delete_uploaded_data(data_type, days_old, dry_run)
-            results['data_types'][data_type] = result
-            results['total_records_deleted'] += result.get('records_deleted', 0)
+            # Only include in results if table was actually processed
+            if not result.get('skipped', False):
+                results['data_types'][data_type] = result
+                results['total_records_deleted'] += result.get('records_deleted', 0)
 
         # Log cleanup summary
         if not dry_run and results['total_records_deleted'] > 0:
