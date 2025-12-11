@@ -761,11 +761,17 @@ class WebAdminService:
                         'error': 'Device name is required'
                     }), 400
 
-                # Validate ULID format (26 characters, alphanumeric)
-                if len(sensor_id) != 26 or not sensor_id.isalnum():
+                # Validate Device ID (alphanumeric, 3-26 characters)
+                if not sensor_id or len(sensor_id) < 3 or len(sensor_id) > 26:
                     return jsonify({
                         'success': False,
-                        'error': 'Invalid Device ID format. Must be 26-character ULID.'
+                        'error': 'Device ID must be 3-26 characters.'
+                    }), 400
+
+                if not sensor_id.replace('_', '').replace('-', '').isalnum():
+                    return jsonify({
+                        'success': False,
+                        'error': 'Device ID must be alphanumeric (letters, numbers, underscore, hyphen only).'
                     }), 400
 
                 # Register device in database

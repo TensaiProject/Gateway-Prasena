@@ -48,8 +48,8 @@
                 <!-- Device ID -->
                 <div class="form-group">
                     <label for="device-id">Device ID <span style="color: var(--color-danger);">*</span></label>
-                    <input type="text" id="device-id" placeholder="e.g., 01K9RSSBEVE5X1CV7ZGTB46MZP" required>
-                    <span class="form-text">ULID format (26 characters). Each device must have unique ID.</span>
+                    <input type="text" id="device-id" placeholder="e.g., PZEM001, BATTERY01, or ULID format" required>
+                    <span class="form-text">3-26 characters (letters, numbers, underscore, hyphen). Must be unique.</span>
                 </div>
 
                 <!-- Device Name -->
@@ -310,13 +310,13 @@ document.getElementById('register-btn').addEventListener('click', async () => {
         return;
     }
 
-    if (deviceId.length !== 26) {
-        showNotification('Device ID must be 26 characters (ULID format)', 'danger');
+    if (deviceId.length < 3 || deviceId.length > 26) {
+        showNotification('Device ID must be 3-26 characters', 'danger');
         return;
     }
 
-    if (!/^[A-Z0-9]+$/i.test(deviceId)) {
-        showNotification('Device ID must contain only letters and numbers', 'danger');
+    if (!/^[A-Z0-9_-]+$/i.test(deviceId)) {
+        showNotification('Device ID must contain only letters, numbers, underscore, or hyphen', 'danger');
         return;
     }
 
