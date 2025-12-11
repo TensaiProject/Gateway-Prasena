@@ -1194,29 +1194,30 @@ class DatabaseManager:
         """
         try:
             with self.get_connection() as conn:
-                # Build query
+                # Build query (using LEFT JOIN to include orphan data)
                 query = """
                     SELECT
                         sd.id,
                         sd.timestamp,
-                        d.sensor_type,
-                        d.sensor_name,
-                        d.sensor_id,
+                        COALESCE(d.sensor_type, 'unknown') as sensor_type,
+                        COALESCE(d.sensor_name, 'Device ' || sd.device_id) as sensor_name,
+                        COALESCE(d.sensor_id, 'UNKNOWN_' || sd.device_id) as sensor_id,
                         d.location,
                         sd.data,
                         sd.uploaded,
                         sd.uploaded_at,
                         sd.read_quality,
-                        sd.error_code
+                        sd.error_code,
+                        sd.device_id
                     FROM sensor_data sd
-                    JOIN devices d ON sd.device_id = d.id
+                    LEFT JOIN devices d ON sd.device_id = d.id
                     WHERE 1=1
                 """
                 params = []
 
-                # Add sensor_type filter
+                # Add sensor_type filter (use COALESCE to handle NULL for orphan data)
                 if sensor_type:
-                    query += " AND d.sensor_type = ?"
+                    query += " AND COALESCE(d.sensor_type, 'unknown') = ?"
                     params.append(sensor_type)
 
                 # Add date range filters
