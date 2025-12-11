@@ -153,6 +153,11 @@
                     <input type="number" id="database-backup-interval" min="3600" max="604800" required>
                     <span class="form-text">Range: 3600-604800s (1hr-7days). How often to create database backups.</span>
                 </div>
+                <div class="form-group">
+                    <label for="database-cleanup-days">Auto-Cleanup Days</label>
+                    <input type="number" id="database-cleanup-days" min="1" max="365" required>
+                    <span class="form-text">Range: 1-365 days. Delete uploaded data older than N days. Set to 1 for daily cleanup.</span>
+                </div>
             </div>
         </div>
 
@@ -263,6 +268,7 @@ function populateIntervalsForm(intervals) {
     document.getElementById('mqtt-poll-interval').value = intervals.mqtt.publisher.poll_interval;
     document.getElementById('mqtt-batch-size').value = intervals.mqtt.publisher.batch_size;
     document.getElementById('database-backup-interval').value = intervals.database.backup_interval;
+    document.getElementById('database-cleanup-days').value = intervals.database.auto_cleanup_days;
 }
 
 // Populate MQTT config form
@@ -299,7 +305,8 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
             }
         },
         database: {
-            backup_interval: parseInt(document.getElementById('database-backup-interval').value)
+            backup_interval: parseInt(document.getElementById('database-backup-interval').value),
+            auto_cleanup_days: parseInt(document.getElementById('database-cleanup-days').value)
         }
     };
 

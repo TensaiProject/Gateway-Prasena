@@ -154,7 +154,8 @@ class WebAdminService:
                         'interval': config.get('upload', {}).get('interval', 60)
                     },
                     'database': {
-                        'backup_interval': config.get('database', {}).get('backup_interval', 86400)
+                        'backup_interval': config.get('database', {}).get('backup_interval', 86400),
+                        'auto_cleanup_days': config.get('database', {}).get('auto_cleanup_days', 1)
                     }
                 }
                 return jsonify({
@@ -1023,6 +1024,9 @@ class WebAdminService:
                 if 'backup_interval' in intervals['database']:
                     if not (3600 <= intervals['database']['backup_interval'] <= 604800):
                         return "Database backup_interval must be between 3600-604800 seconds"
+                if 'auto_cleanup_days' in intervals['database']:
+                    if not (1 <= intervals['database']['auto_cleanup_days'] <= 365):
+                        return "Database auto_cleanup_days must be between 1-365 days"
 
             return None
         except Exception as e:
