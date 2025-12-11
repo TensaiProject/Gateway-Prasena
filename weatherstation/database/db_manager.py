@@ -1220,11 +1220,18 @@ class DatabaseManager:
                     params.append(sensor_type)
 
                 # Add date range filters
+                # Handle date-only format (YYYY-MM-DD) by appending time
                 if start_date:
+                    # If date only (10 chars), append start of day
+                    if len(start_date) == 10:
+                        start_date = f"{start_date} 00:00:00"
                     query += " AND sd.timestamp >= ?"
                     params.append(start_date)
 
                 if end_date:
+                    # If date only (10 chars), append end of day
+                    if len(end_date) == 10:
+                        end_date = f"{end_date} 23:59:59"
                     query += " AND sd.timestamp <= ?"
                     params.append(end_date)
 
