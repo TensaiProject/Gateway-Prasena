@@ -102,6 +102,55 @@
         </div>
     </div>
 
+    <!-- Data Export -->
+    <div class="panel">
+        <div class="panel-header">Data Export</div>
+        <div class="panel-body">
+            <p class="text-sm text-muted" style="margin-bottom: var(--space-lg);">Export sensor data from local database</p>
+
+            <form id="export-form" style="display: grid; gap: var(--space-md);">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md);">
+                    <div class="form-group">
+                        <label for="export-start-date">Start Date</label>
+                        <input type="date" id="export-start-date" required>
+                        <span class="form-text">From date (inclusive)</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="export-end-date">End Date</label>
+                        <input type="date" id="export-end-date" required>
+                        <span class="form-text">To date (inclusive)</span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md);">
+                    <div class="form-group">
+                        <label for="export-sensor-type">Sensor Type</label>
+                        <select id="export-sensor-type">
+                            <option value="">All Sensors</option>
+                            <option value="battery">Battery Only</option>
+                            <option value="weather">Weather Only</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="export-format">Format</label>
+                        <select id="export-format">
+                            <option value="csv">CSV (Excel compatible)</option>
+                            <option value="json">JSON (API format)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-end">
+                    <button type="submit" class="btn btn-primary" id="export-btn">
+                        Download Data
+                    </button>
+                </div>
+            </form>
+
+            <div id="export-status" style="margin-top: var(--space-md);"></div>
+        </div>
+    </div>
+
     <!-- Important Notes -->
     <div class="alert alert-info">
         <strong>Note:</strong> Configuration changes require service restart to take effect. Web admin uses socket activation and auto-shuts down after 60 seconds of idle time.
@@ -112,5 +161,92 @@
 {% block extra_scripts %}
 <script>
 console.log('Dashboard loaded');
+
+// Set default date range (last 7 days)
+const today = new Date();
+const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+document.getElementById('export-end-date').valueAsDate = today;
+document.getElementById('export-start-date').valueAsDate = weekAgo;
+
+// Handle export form submission
+document.getElementById('export-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const startDate = document.getElementById('export-start-date').value;
+    const endDate = document.getElementById('export-end-date').value;
+    const sensorType = document.getElementById('export-sensor-type').value;
+    const format = document.getElementById('export-format').value;
+    const statusDiv = document.getElementById('export-status');
+    const exportBtn = document.getElementById('export-btn');
+
+    // Validate dates
+    if (!startDate || !endDate) {
+        statusDiv.innerHTML = '<div class="alert alert-danger">Please select both start and end dates</div>';
+        return;
+    }
+
+    if (new Date(startDate) > new Date(endDate)) {
+        statusDiv.innerHTML = '<div class="alert alert-danger">Start date must be before end date</div>';
+        return;
+    }
+
+    // Build URL
+    let url = `/api/data/export?start_date=${startDate}&end_date=${endDate}&format=${format}`;
+    if (sensorType) {
+        url += `&sensor_type=${sensorType}`;
+    }
+
+    // Show loading
+    statusDiv.innerHTML = '<div class="alert alert-info">Preparing download...</div>';
+    exportBtn.disabled = true;
+    exportBtn.textContent = 'Downloading...';
+
+    try {
+        // Trigger download
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Export failed');
+        }
+
+        // Get filename from Content-Disposition header
+        const disposition = response.headers.get('Content-Disposition');
+        let filename = `sensor_data.${format}`;
+        if (disposition) {
+            const filenameMatch = disposition.match(/filename=(.+)/);
+            if (filenameMatch) {
+                filename = filenameMatch[1];
+            }
+        }
+
+        // Download file
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(downloadUrl);
+        a.remove();
+
+        // Show success
+        statusDiv.innerHTML = '<div class="alert alert-success">Download completed successfully!</div>';
+
+        // Clear status after 5 seconds
+        setTimeout(() => {
+            statusDiv.innerHTML = '';
+        }, 5000);
+
+    } catch (error) {
+        console.error('Export error:', error);
+        statusDiv.innerHTML = `<div class="alert alert-danger">Export failed: ${error.message}</div>`;
+    } finally {
+        exportBtn.disabled = false;
+        exportBtn.textContent = 'Download Data';
+    }
+});
 </script>
 {% endblock %}

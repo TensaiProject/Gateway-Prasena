@@ -1172,3 +1172,91 @@ class DatabaseManager:
                 stats['total_pending'] += pending_count
 
         return stats
+
+    def query_sensor_data_for_export(
+        self,
+        sensor_type: str = None,
+        start_date: str = None,
+        end_date: str = None,
+        limit: int = 10000
+    ) -> List[Dict[str, Any]]:
+        """
+        Query sensor data for export/download
+
+        Args:
+            sensor_type: Filter by sensor type ('battery', 'weather', None for all)
+            start_date: Start date filter (ISO format: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+            end_date: End date filter (ISO format: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+            limit: Maximum records to return (default 10000)
+
+        Returns:
+            List of sensor data records with parsed JSON data and device info
+        """
+        try:
+            with self.get_connection() as conn:
+                # Build query
+                query = """
+                    SELECT
+                        sd.id,
+                        sd.timestamp,
+                        d.sensor_type,
+                        d.sensor_name,
+                        d.sensor_id,
+                        d.location,
+                        sd.data,
+                        sd.uploaded,
+                        sd.uploaded_at,
+                        sd.read_quality,
+                        sd.error_code
+                    FROM sensor_data sd
+                    JOIN devices d ON sd.device_id = d.id
+                    WHERE 1=1
+                """
+                params = []
+
+                # Add sensor_type filter
+                if sensor_type:
+                    query += " AND d.sensor_type = ?"
+                    params.append(sensor_type)
+
+                # Add date range filters
+                if start_date:
+                    query += " AND sd.timestamp >= ?"
+                    params.append(start_date)
+
+                if end_date:
+                    query += " AND sd.timestamp <= ?"
+                    params.append(end_date)
+
+                # Order by timestamp descending (newest first)
+                query += " ORDER BY sd.timestamp DESC"
+
+                # Add limit
+                query += " LIMIT ?"
+                params.append(limit)
+
+                # Execute query
+                cursor = conn.execute(query, params)
+                rows = cursor.fetchall()
+
+                # Parse results
+                results = []
+                for row in rows:
+                    record = dict(row)
+
+                    # Parse JSON data field
+                    try:
+                        record['data_parsed'] = json.loads(record['data'])
+                    except:
+                        record['data_parsed'] = {}
+
+                    results.append(record)
+
+                logger.info(f"Exported {len(results)} records (sensor_type={sensor_type}, "
+                           f"start_date={start_date}, end_date={end_date})")
+
+                return results
+
+        except Exception as e:
+            logger.error(f"Failed to query sensor data for export: {e}")
+            return []

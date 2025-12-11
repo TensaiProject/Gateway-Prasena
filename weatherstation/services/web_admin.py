@@ -880,6 +880,124 @@ class WebAdminService:
                     'error': str(e)
                 }), 500
 
+        @self.app.route('/api/data/export', methods=['GET'])
+        def export_sensor_data():
+            """
+            Export sensor data as CSV or JSON
+
+            Query Parameters:
+                sensor_type: 'battery', 'weather', or omit for all
+                start_date: Start date (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+                end_date: End date (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+                format: 'csv' or 'json' (default: csv)
+                limit: Maximum records (default: 10000, max: 50000)
+            """
+            try:
+                # Get query parameters
+                sensor_type = request.args.get('sensor_type')
+                start_date = request.args.get('start_date')
+                end_date = request.args.get('end_date')
+                export_format = request.args.get('format', 'csv').lower()
+                limit = min(int(request.args.get('limit', 10000)), 50000)
+
+                # Validate format
+                if export_format not in ['csv', 'json']:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Invalid format. Use csv or json.'
+                    }), 400
+
+                # Query data
+                records = self.db.query_sensor_data_for_export(
+                    sensor_type=sensor_type,
+                    start_date=start_date,
+                    end_date=end_date,
+                    limit=limit
+                )
+
+                if not records:
+                    return jsonify({
+                        'success': False,
+                        'error': 'No data found for the specified filters'
+                    }), 404
+
+                # Generate filename
+                from datetime import datetime
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                sensor_prefix = f"{sensor_type}_" if sensor_type else "all_"
+                filename = f"sensor_data_{sensor_prefix}{timestamp}.{export_format}"
+
+                # Export as CSV
+                if export_format == 'csv':
+                    import csv
+                    from io import StringIO
+
+                    output = StringIO()
+
+                    # Get all unique data keys from parsed data
+                    data_keys = set()
+                    for record in records:
+                        data_keys.update(record['data_parsed'].keys())
+                    data_keys = sorted(data_keys)
+
+                    # CSV headers
+                    headers = ['id', 'timestamp', 'sensor_type', 'sensor_name', 'sensor_id', 'location'] + data_keys + ['uploaded', 'uploaded_at', 'read_quality', 'error_code']
+
+                    writer = csv.DictWriter(output, fieldnames=headers, extrasaction='ignore')
+                    writer.writeheader()
+
+                    # Write rows
+                    for record in records:
+                        row = {
+                            'id': record['id'],
+                            'timestamp': record['timestamp'],
+                            'sensor_type': record['sensor_type'],
+                            'sensor_name': record['sensor_name'],
+                            'sensor_id': record['sensor_id'],
+                            'location': record.get('location', ''),
+                            'uploaded': record['uploaded'],
+                            'uploaded_at': record.get('uploaded_at', ''),
+                            'read_quality': record.get('read_quality', ''),
+                            'error_code': record.get('error_code', '')
+                        }
+                        # Add data fields
+                        for key in data_keys:
+                            row[key] = record['data_parsed'].get(key, '')
+
+                        writer.writerow(row)
+
+                    # Return CSV file
+                    response = make_response(output.getvalue())
+                    response.headers['Content-Type'] = 'text/csv'
+                    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+                    return response
+
+                # Export as JSON
+                else:
+                    # Clean up records for JSON export
+                    for record in records:
+                        # Remove raw data field, keep parsed version
+                        record.pop('data', None)
+                        # Rename data_parsed to data
+                        record['data'] = record.pop('data_parsed', {})
+
+                    response = make_response(json.dumps(records, indent=2))
+                    response.headers['Content-Type'] = 'application/json'
+                    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+                    return response
+
+            except ValueError as e:
+                return jsonify({
+                    'success': False,
+                    'error': f'Invalid parameter: {str(e)}'
+                }), 400
+            except Exception as e:
+                logger.error(f"Error exporting data: {e}", exc_info=True)
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 500
+
         # ============================================
         # API ENDPOINTS - SYSTEM STATUS (Simplified)
         # ============================================
