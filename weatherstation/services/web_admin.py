@@ -13,7 +13,7 @@ import time
 import signal
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from flask import Flask, render_template, jsonify, request, send_from_directory
+from flask import Flask, render_template, jsonify, request, send_from_directory, make_response
 from flask_cors import CORS
 from werkzeug.serving import run_simple
 
