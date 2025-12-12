@@ -43,8 +43,9 @@ class DatabaseManager:
         """Get database connection context manager"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row  # Return rows as dictionaries
-        # Enable foreign key constraints (SQLite default is OFF)
-        conn.execute("PRAGMA foreign_keys = ON")
+        # DISABLED: Foreign key constraints causing battery reader deadlock/hang
+        # TODO: Re-enable after fixing database connection handling in battery reader
+        # conn.execute("PRAGMA foreign_keys = ON")
         try:
             yield conn
             conn.commit()
