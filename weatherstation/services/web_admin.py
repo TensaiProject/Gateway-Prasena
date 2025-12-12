@@ -1247,7 +1247,10 @@ class WebAdminService:
             # Check if address already registered
             devices = self.db.get_all_devices()
             for device in devices:
-                if device['device_type'] == 'battery' and device.get('modbus_address') == modbus_address:
+                if device['sensor_type'] == 'battery' and device.get('modbus_address') == modbus_address:
+                    # Allow update if same device_id (re-registration)
+                    if device.get('sensor_id') == device_data.get('device_id'):
+                        continue
                     return f"Modbus address {modbus_address} is already registered"
 
         return None
