@@ -899,7 +899,7 @@ class DatabaseManager:
                     delete_query = """
                         DELETE FROM sensor_data
                         WHERE uploaded = 1
-                        AND timestamp < datetime('now', '-' || ? || ' days')
+                        AND datetime(timestamp) < datetime('now', '-' || ? || ' days')
                     """
                     conn.execute(delete_query, (days_old,))
                     logger.info(
