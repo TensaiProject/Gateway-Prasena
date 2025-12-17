@@ -28,7 +28,7 @@ fi
 
 # Configuration
 SUBNET="192.168.1.0/24"
-PING_INTERVAL=15
+PING_INTERVAL=10
 SCRIPT_PATH="/usr/local/bin/keep-alive-subnet.sh"
 SERVICE_PATH="/etc/systemd/system/subnet-keepalive.service"
 
@@ -51,7 +51,7 @@ cat > "$SCRIPT_PATH" << 'EOF'
 # Prevents ARP cache timeout for all devices
 
 SUBNET="192.168.1.0/24"
-PING_INTERVAL=15  # Ping every 15 seconds
+PING_INTERVAL=10  # Ping every 10 seconds
 
 while true; do
     fping -g $SUBNET -c 1 -t 1000 > /dev/null 2>&1
