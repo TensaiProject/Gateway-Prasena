@@ -11,6 +11,7 @@ from typing import Dict, Any
 
 from weatherstation.database.db_manager import DatabaseManager
 from weatherstation.utils.logger import get_logger, setup_logging
+from weatherstation.utils.timestamp_utils import now_rfc3339
 
 logger = get_logger(__name__)
 
@@ -77,7 +78,7 @@ class CleanupService:
         """
         logger.info("=" * 60)
         logger.info(f"Starting Cleanup Operation")
-        logger.info(f"Timestamp: {datetime.now().isoformat()}")
+        logger.info(f"Timestamp: {now_rfc3339()}")
         if dry_run:
             logger.info("DRY RUN MODE - No data will be deleted")
         logger.info("=" * 60)

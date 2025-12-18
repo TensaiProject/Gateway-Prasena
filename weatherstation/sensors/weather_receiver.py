@@ -12,6 +12,7 @@ from flask import Flask, request, jsonify
 
 from weatherstation.database.db_manager import DatabaseManager
 from weatherstation.utils.logger import get_logger, setup_logging
+from weatherstation.utils.timestamp_utils import now_rfc3339
 
 logger = get_logger(__name__)
 
@@ -81,7 +82,7 @@ class WeatherDataParser:
                     parsed[key] = value
 
             # Add metadata
-            parsed['received_at'] = datetime.now().isoformat()
+            parsed['received_at'] = now_rfc3339()
 
             return parsed
 
@@ -96,7 +97,7 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'service': 'weather_receiver',
-        'timestamp': datetime.now().isoformat()
+        'timestamp': now_rfc3339()
     })
 
 
@@ -218,8 +219,8 @@ def receive_ecowitt_data():
 
         # Add metadata
         parsed_data['stationtype'] = raw_data.get('stationtype', 'unknown')
-        parsed_data['dateutc'] = raw_data.get('dateutc', datetime.now().isoformat())
-        parsed_data['received_at'] = datetime.now().isoformat()
+        parsed_data['dateutc'] = raw_data.get('dateutc', now_rfc3339())
+        parsed_data['received_at'] = now_rfc3339()
 
         # Store to database
         success = db_manager.insert_sensor_data(sensor_id, parsed_data)

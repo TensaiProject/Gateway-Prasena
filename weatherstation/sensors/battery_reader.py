@@ -22,6 +22,7 @@ except ImportError:
 
 from weatherstation.database.db_manager import DatabaseManager
 from weatherstation.utils.logger import get_logger
+from weatherstation.utils.timestamp_utils import now_rfc3339
 from weatherstation.sensors.error_codes import classify_battery_error, get_error_description
 
 logger = get_logger(__name__)
@@ -53,7 +54,7 @@ def create_null_reading(error_message: str, error_code: int = 1) -> Dict[str, An
         "energy": None,
         "alarm_high_voltage": None,
         "alarm_low_voltage": None,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": now_rfc3339(),
         "error": True,
         "error_code": error_code,
         "error_message": error_message,
@@ -335,7 +336,7 @@ class BatterySensor:
             "energy": round(energy, 4),
             "alarm_high_voltage": alarm_high,
             "alarm_low_voltage": alarm_low,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": now_rfc3339()
         }
 
     def close(self):
@@ -421,7 +422,7 @@ class AggregationBuffer:
                 "error_code": last_error.get('error_code', 4),
                 "error_message": last_error.get('error_message', 'All samples failed'),
                 "error_description": last_error.get('error_description', 'Unknown error'),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": now_rfc3339()
             }
         else:
             # Aggregate ONLY valid samples
@@ -447,7 +448,7 @@ class AggregationBuffer:
                 "valid_sample_count": valid_count,
                 "error_count": error_count,
                 "read_quality": read_quality,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": now_rfc3339()
             }
 
             # Add error metadata if there were some errors

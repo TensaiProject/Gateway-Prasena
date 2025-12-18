@@ -11,6 +11,7 @@ from pathlib import Path
 from contextlib import contextmanager
 
 from weatherstation.utils.logger import get_logger
+from weatherstation.utils.timestamp_utils import now_rfc3339
 
 logger = get_logger(__name__)
 
@@ -476,7 +477,7 @@ class DatabaseManager:
                 device_id = row['id']
 
                 # Insert sensor data
-                timestamp = data.pop('timestamp', datetime.now().isoformat())
+                timestamp = data.pop('timestamp', now_rfc3339())
                 data_json = json.dumps(data)
 
                 conn.execute("""
@@ -634,7 +635,7 @@ class DatabaseManager:
                 placeholders = ','.join('?' * len(record_ids))
                 conn.execute(
                     f"UPDATE sensor_data SET uploaded = 1, uploaded_at = ? WHERE id IN ({placeholders})",
-                    [datetime.now().isoformat()] + record_ids
+                    [now_rfc3339()] + record_ids
                 )
             return True
         except Exception as e:
@@ -673,7 +674,7 @@ class DatabaseManager:
                     data.get('uv_index'),
                     data.get('light_intensity'),
                     json.dumps(data.get('extra_data', {})),
-                    data.get('timestamp', datetime.now().isoformat())
+                    data.get('timestamp', now_rfc3339())
                 ))
             return True
         except Exception as e:
