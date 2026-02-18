@@ -59,55 +59,64 @@ cd ~/Gateway-Prasena
 bash scripts/auto_install.sh
 ```
 
-The installer will:
-1. Update system packages
-2. Install dependencies (Python, Git, SQLite, etc.)
-3. Create Python virtual environment
-4. Install Python packages
-5. Create data directories
+The installer will automatically:
+1. Install system dependencies (Python, Git, SQLite, pigpio, etc.)
+2. Set unique hostname for this Raspberry Pi
+3. Setup Python virtual environment and install packages
+4. Create data and log directories
+5. Configure system name and location
 6. Initialize database
-7. Install systemd services (weatherstation, web-admin)
-8. Optionally install subnet keep-alive service
+7. Setup systemd services (weatherstation, web-admin socket)
+8. Install subnet keep-alive service (prevents ARP timeout)
+9. Optionally register sensors
 
 **Installation takes ~5-10 minutes** depending on your internet speed and Pi model.
 
+The installer will ask for:
+- Hostname (must be unique per device)
+- System name and location
+- Whether to install subnet keep-alive
+- Whether to register sensors now
+
 Expected output:
 ```
-======================================
-Gateway-Prasena Installation
-======================================
+╔════════════════════════════════════════════╗
+║   Gateway-Prasena Auto Installer          ║
+║   Weather Station Gateway System           ║
+╚════════════════════════════════════════════╝
 
-[1/9] Updating system packages...
-[2/9] Installing system dependencies...
-[3/9] Creating Python virtual environment...
-[4/9] Installing Python dependencies...
-[5/9] Creating data and log directories...
-[6/9] Initializing database...
-[7/9] Verifying configuration...
-[8/9] Installing systemd services...
-[9/9] Installing subnet keep-alive service...
+[1/9] Installing system dependencies...
+[2/9] Setting hostname...
+[3/9] Setting up repository...
+[4/9] Setting up Python virtual environment...
+[5/9] Creating data directories...
+[6/9] System configuration...
+[7/9] Initializing database...
+[8/9] Setting up systemd services...
+[9/9] Setting up subnet keep-alive service...
 
-======================================
 Installation Complete!
-======================================
 ```
 
 ---
 
 ## Post-Installation
 
-### 1. Start Services
+### 1. Verify Services
 
-```bash
-sudo systemctl start weatherstation.service
-```
+The installer may have already started services. Check status:
 
-Check status:
 ```bash
 sudo systemctl status weatherstation.service
 ```
 
 Should show: `Active: active (running)`
+
+If not running, start manually:
+```bash
+sudo systemctl start weatherstation.service
+sudo systemctl start web-admin.socket
+```
 
 ### 2. Access Web Admin
 

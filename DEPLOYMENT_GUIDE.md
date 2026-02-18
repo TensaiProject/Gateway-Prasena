@@ -144,145 +144,70 @@ If you don't have access to the auto-pull setup:
 cd ~
 git clone https://github.com/TensaiProject/Gateway-Prasena.git
 cd Gateway-Prasena
-git checkout staging
-git pull origin staging
 ```
 
-### 3. Navigate to Repository
+#### Step 2: Run Automated Installer
+
+Navigate to the repository and run the installer:
 
 ```bash
 cd ~/Gateway-Prasena
+bash scripts/auto_install.sh
 ```
 
-### 4. Create Python Virtual Environment
+The installer will automatically:
+1. Update system packages
+2. Install dependencies (Python, Git, SQLite, pigpio, etc.)
+3. Create Python virtual environment
+4. Install Python packages from requirements.txt
+5. Create data and log directories
+6. Configure system name and location
+7. Initialize database
+8. Setup systemd services (weatherstation, web-admin)
+9. Install subnet keep-alive service (optional)
+10. Register sensors (optional)
 
-```bash
-cd ~/Gateway-Prasena
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 5. Install Python Dependencies
-
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### 6. Create Required Directories
-
-```bash
-mkdir -p ~/Gateway-Prasena/data
-mkdir -p ~/Gateway-Prasena/logs
-mkdir -p ~/Gateway-Prasena/weatherstation/config
-```
-
-### 7. Initialize Database
-
-```bash
-cd ~/Gateway-Prasena
-source venv/bin/activate
-python -m weatherstation.database.init_db
-```
+**Installation takes ~5-10 minutes** depending on your internet speed and Pi model.
 
 Expected output:
 ```
-Database initialized successfully at: ./data/weatherstation.db
+╔════════════════════════════════════════════╗
+║   Gateway-Prasena Auto Installer          ║
+║   Weather Station Gateway System           ║
+╚════════════════════════════════════════════╝
+
+[1/9] Installing system dependencies...
+[2/9] Setting hostname...
+[3/9] Setting up repository...
+[4/9] Setting up Python virtual environment...
+[5/9] Creating data directories...
+[6/9] System configuration...
+[7/9] Initializing database...
+[8/9] Setting up systemd services...
+[9/9] Setting up subnet keep-alive service...
+
+Installation Complete!
 ```
 
-### 8. Verify Configuration File
+#### Step 3: Start Services
 
-Check that `system_config.yaml` exists and has correct settings:
+The installer will offer to start services automatically. If you declined, start them manually:
 
 ```bash
-cat ~/Gateway-Prasena/weatherstation/config/system_config.yaml
-```
-
-Key settings to verify:
-```yaml
-database:
-  path: ./data/weatherstation.db
-  auto_cleanup_enabled: true
-  auto_cleanup_days: 90
-
-mqtt:
-  protocol: "wss"
-  broker_host: emqx.prasenaenergy.com
-  broker_port: 8084
-  username: prasena
-  # password will be set separately
-
-battery_sensors:
-  enabled: true
-  poll_interval: 1
-  aggregation_window: 30
-
-weather_station:
-  enabled: true
-  http_port: 5001
-  protocol: ecowitt
-```
-
----
-
-## Service Installation
-
-### 1. Install Main Service
-
-```bash
-cd ~/Gateway-Prasena
-sudo cp systemd/weatherstation.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable weatherstation.service
-```
-
-### 2. Install Web Admin Service
-
-```bash
-sudo cp systemd/web-admin.service /etc/systemd/system/
-sudo cp systemd/web-admin.socket /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable web-admin.socket
-```
-
-### 3. Install Subnet Keep-Alive Service (Optional but Recommended)
-
-```bash
-cd ~/Gateway-Prasena/scripts
-chmod +x install_subnet_keepalive.sh
-sudo ./install_subnet_keepalive.sh
-```
-
-This will:
-- Install keep-alive service to prevent router from dropping connection
-- Set ping interval to 10 seconds
-- Enable service on boot
-
-### 4. Start Services
-
-```bash
-# Start main weatherstation service
 sudo systemctl start weatherstation.service
-
-# Web admin will start on-demand when accessed
-# Test by accessing: http://<IP_ADDRESS>:8080
-
-# Check service status
-sudo systemctl status weatherstation.service
-sudo systemctl status web-admin.socket
-sudo systemctl status subnet-keepalive.service
+sudo systemctl start web-admin.socket
 ```
 
-### 5. Verify Services are Running
-
+Check service status:
 ```bash
-# Check main service
-sudo systemctl status weatherstation.service | grep "Active"
+sudo systemctl status weatherstation.service
 # Should show: Active: active (running)
 
-# Check logs
-sudo journalctl -u weatherstation.service -n 50 --no-pager
+# View logs
+sudo journalctl -u weatherstation.service -f
 ```
+
+Web admin will start on-demand when accessed: `http://<IP_ADDRESS>:8080`
 
 ---
 
@@ -753,27 +678,30 @@ ORDER BY timestamp DESC;
 
 ## Quick Deployment Checklist
 
+### Initial Setup
 - [ ] Flash Raspberry Pi OS Lite to SD card
-- [ ] Configure hostname, user, SSH, WiFi/Ethernet
+- [ ] Configure hostname, user, SSH, WiFi/Ethernet in Pi Imager
 - [ ] First boot and SSH connection
-- [ ] Update system: `sudo apt update && sudo apt upgrade -y`
-- [ ] Install dependencies
-- [ ] Setup SSH deploy key and auto-pull script (recommended)
-- [ ] Clone repository: `~/auto_pull.sh` or manual `git clone`
-- [ ] Create virtual environment and install Python packages
-- [ ] Initialize database
-- [ ] Verify `system_config.yaml`
-- [ ] Install systemd services
-- [ ] Start weatherstation service
-- [ ] Enable web-admin socket
-- [ ] Install subnet keep-alive service (recommended)
-- [ ] Register devices via Web Admin
-- [ ] Configure Ecowitt weather station
-- [ ] Set static IP (recommended)
+- [ ] (Optional) Update system: `sudo apt update && sudo apt upgrade -y`
+
+### Installation
+- [ ] Get one-liner from admin or clone manually
+- [ ] Run `~/auto_pull.sh` or `git clone` to get repository
+- [ ] Run `bash scripts/auto_install.sh`
+- [ ] Wait ~5-10 minutes for installation to complete
+- [ ] Start services (or let installer start them)
+
+### Configuration
+- [ ] Register devices via Web Admin (`http://<IP>:8080`)
+- [ ] Configure Ecowitt weather station (IP, Port 5001, Path: /data/report/)
+- [ ] Set static IP (recommended for production)
 - [ ] Enable auto-update cron job (optional)
-- [ ] Test data collection
+
+### Verification
+- [ ] Test data collection (check logs and database)
 - [ ] Verify MQTT publishing
 - [ ] Check auto-cleanup settings (should be 90 days)
+- [ ] Test web admin access
 - [ ] Document IP address and device IDs
 
 ---
