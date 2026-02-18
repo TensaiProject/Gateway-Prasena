@@ -229,24 +229,57 @@ http://weatherstation2.local:8080
 
 1. Go to **Devices** page
 2. Click **"Register Device"**
-3. Fill in details:
-   - **Device ID**: Will be auto-generated (ULID format)
-   - **Sensor Type**: `weather_station`
-   - **Location**: e.g., "Lokasi A - Jakarta"
-   - **Enabled**: ✓ (checked)
+3. Fill in the following information:
+
+   **Required Fields:**
+   - **Device ID**: Enter a unique identifier for this device
+     - Format: 3-26 characters (alphanumeric + underscore + hyphen)
+     - Examples: `WEATHER_STATION_01`, `WS_JAKARTA`, `ECOWITT_001`
+     - Must be unique across all devices
+
+   - **Device Type**: Select `weather` (or `weather_station`)
+
+   - **Device Name**: Friendly name for this device
+     - Example: "Weather Station Jakarta Utara"
+
+   **Optional Fields:**
+   - **Location**: Physical location of the device
+     - Example: "Gedung A - Lantai 3 - Jakarta"
+
+   - **Enabled**: ✓ (checked) to activate immediately
+
 4. Click **Submit**
-5. **IMPORTANT**: Copy the generated Device ID
+5. **IMPORTANT**: Save the Device ID you entered - you'll need it for troubleshooting
 
 ### 3. Register Battery Sensor (if applicable)
 
 1. Click **"Register Device"** again
-2. Fill in details:
-   - **Device ID**: Auto-generated
-   - **Sensor Type**: `battery`
-   - **Location**: e.g., "Lokasi A - Battery Monitor"
-   - **Enabled**: ✓ (checked)
+2. Fill in the following information:
+
+   **Required Fields:**
+   - **Device ID**: Enter a unique identifier for this battery sensor
+     - Format: 3-26 characters (alphanumeric + underscore + hyphen)
+     - Examples: `PZEM_001`, `BATTERY_STATION_01`, `BAT_JAKARTA_01`
+     - Must be unique across all devices
+
+   - **Device Type**: Select `battery`
+
+   - **Device Name**: Friendly name for this sensor
+     - Example: "PZEM Battery Monitor 1"
+
+   - **Modbus Address**: RS485 Modbus address (1-247)
+     - Each battery sensor must have a unique modbus address
+     - Default PZEM address is usually `1`
+     - If you have multiple PZEM sensors, set addresses to `1`, `2`, `3`, etc.
+
+   **Optional Fields:**
+   - **Location**: Physical location
+     - Example: "Gedung A - Panel Listrik - Jakarta"
+
+   - **Enabled**: ✓ (checked) to activate immediately
+
 3. Click **Submit**
-4. Copy the Device ID
+4. **IMPORTANT**: Save the Device ID and Modbus Address for reference
 
 ### 4. Configure Ecowitt Weather Station
 

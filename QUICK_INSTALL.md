@@ -134,12 +134,32 @@ http://weatherstation2.local:8080
 
 1. Go to **Devices** page
 2. Click **"Register Device"**
-3. Add weather station:
-   - Sensor Type: `weather_station`
-   - Location: "Your Location Name"
-4. Add battery sensor (if applicable):
-   - Sensor Type: `battery`
-   - Location: "Battery Monitor Location"
+3. **Add weather station:**
+
+   **Required Fields:**
+   - **Device ID**: Enter a unique identifier (e.g., `WEATHER_STATION_01`, `WS_JAKARTA`)
+     - Format: 3-26 characters (alphanumeric + underscore + hyphen)
+   - **Device Type**: Select `weather` (or `weather_station`)
+   - **Device Name**: Friendly name (e.g., "Weather Station Jakarta")
+
+   **Optional Fields:**
+   - **Location**: Physical location (e.g., "Gedung A - Jakarta")
+   - **Enabled**: ✓ (checked) to activate
+
+4. **Add battery sensor (if applicable):**
+
+   **Required Fields:**
+   - **Device ID**: Enter unique identifier (e.g., `PZEM_001`, `BAT_JAKARTA_01`)
+     - Format: 3-26 characters (alphanumeric + underscore + hyphen)
+   - **Device Type**: Select `battery`
+   - **Device Name**: Friendly name (e.g., "PZEM Battery Monitor 1")
+   - **Modbus Address**: RS485 address (1-247)
+     - Each battery sensor needs unique address
+     - Default PZEM address is usually `1`
+
+   **Optional Fields:**
+   - **Location**: Physical location (e.g., "Gedung A - Panel Listrik")
+   - **Enabled**: ✓ (checked) to activate
 
 ### 4. Configure Ecowitt Weather Station
 
