@@ -477,7 +477,7 @@ register_sensors() {
             # Generate ULID-like ID
             sensor_id="PZEM_$(hostname)_$(printf '%02d' $i)"
 
-            sqlite3 data/weatherstation.db "INSERT INTO sensors (sensor_id, sensor_type, sensor_name, modbus_address, enabled) VALUES ('$sensor_id', 'battery', '$pzem_name', $pzem_addr, 1);"
+            sqlite3 data/weatherstation.db "INSERT INTO devices (sensor_id, sensor_type, sensor_name, modbus_address, enabled) VALUES ('$sensor_id', 'battery', '$pzem_name', $pzem_addr, 1);"
 
             print_success "Registered: $sensor_id (address: $pzem_addr)"
         done
@@ -492,7 +492,7 @@ register_sensors() {
 
             sensor_id="WEATHER_$(hostname)"
 
-            sqlite3 data/weatherstation.db "INSERT INTO sensors (sensor_id, sensor_type, sensor_name, enabled) VALUES ('$sensor_id', 'weather', '$weather_name', 1);"
+            sqlite3 data/weatherstation.db "INSERT INTO devices (sensor_id, sensor_type, sensor_name, enabled) VALUES ('$sensor_id', 'weather', '$weather_name', 1);"
 
             print_success "Registered: $sensor_id"
         fi
@@ -500,7 +500,7 @@ register_sensors() {
         # Show registered sensors
         echo ""
         print_info "Registered sensors:"
-        sqlite3 data/weatherstation.db "SELECT sensor_id, sensor_type, sensor_name, modbus_address FROM sensors;"
+        sqlite3 data/weatherstation.db "SELECT sensor_id, sensor_type, sensor_name, modbus_address FROM devices;"
     else
         print_info "Kamu bisa daftarkan sensor nanti via web admin"
         print_info "Akses: http://$(hostname -I | awk '{print $1}'):8080/devices"
