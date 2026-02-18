@@ -399,7 +399,7 @@ EOF
 # STEP 8: Setup Systemd Services
 # =============================================================================
 setup_systemd() {
-    print_header "Step 8/8: Setting Up Systemd Services"
+    print_header "Step 8/9: Setting Up Systemd Services"
 
     cd "$INSTALL_DIR/scripts"
 
@@ -417,10 +417,39 @@ setup_systemd() {
 }
 
 # =============================================================================
-# STEP 9: Register Sensors (Interactive)
+# STEP 9: Setup Subnet Keep-Alive Service
+# =============================================================================
+setup_subnet_keepalive() {
+    print_header "Step 9/9: Setting Up Subnet Keep-Alive Service"
+
+    echo "Service ini mencegah ARP cache timeout issues dengan weather station."
+    echo "Akan melakukan ping ke subnet setiap 10 detik."
+    echo ""
+    read -p "Install subnet keep-alive service? (Y/n): " install_keepalive
+    install_keepalive=${install_keepalive:-Y}
+
+    if [ "$install_keepalive" = "y" ] || [ "$install_keepalive" = "Y" ]; then
+        cd "$INSTALL_DIR"
+
+        if [ -f "install-subnet-keepalive.sh" ]; then
+            print_info "Installing subnet keep-alive service..."
+            sudo bash install-subnet-keepalive.sh
+            print_success "Subnet keep-alive service installed"
+        else
+            print_warning "install-subnet-keepalive.sh not found, skipping..."
+        fi
+    else
+        print_info "Subnet keep-alive installation skipped"
+        print_info "You can install it later by running:"
+        print_info "  cd ~/Gateway-Prasena && sudo bash install-subnet-keepalive.sh"
+    fi
+}
+
+# =============================================================================
+# Optional: Register Sensors (Interactive)
 # =============================================================================
 register_sensors() {
-    print_header "Register Sensors"
+    print_header "Optional: Register Sensors"
 
     echo "Apakah kamu ingin mendaftarkan sensor sekarang?"
     echo ""
@@ -580,7 +609,8 @@ main() {
     echo "  6. Configure system"
     echo "  7. Initialize database"
     echo "  8. Setup systemd services"
-    echo "  9. Register sensors (optional)"
+    echo "  9. Setup subnet keep-alive service"
+    echo "  +. Register sensors (optional)"
     echo ""
 
     read -p "Lanjutkan instalasi? (Y/n): " confirm
@@ -605,6 +635,7 @@ main() {
     configure_system
     init_database
     setup_systemd
+    setup_subnet_keepalive
     register_sensors
     print_summary
 }
